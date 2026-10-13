@@ -9850,5 +9850,34 @@ html,body{height:100%;width:100%;padding:0;margin:0;display:-webkit-box;display:
 <!-- -->
 <!-- -->
 <script src="../../assets/js/app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var bannerSwiper = document.querySelector('.swiper_box .my-swipe');
+  if (bannerSwiper && typeof Swiper !== 'undefined') {
+    var dots = document.querySelectorAll('.swiper_box .swiper-button span');
+    new Swiper(bannerSwiper, {
+      loop: true,
+      speed: 600,
+      autoplay: {
+        delay: 3000,
+        disableOnInteraction: false
+      },
+      on: {
+        slideChange: function() {
+          var realIndex = this.realIndex;
+          dots.forEach(function(dot, i) {
+            if (i === realIndex) {
+              dot.classList.add('active');
+            } else {
+              dot.classList.remove('active');
+            }
+          });
+        }
+      }
+    });
+  }
+});
+</script>
 </body>
 </html>
