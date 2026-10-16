@@ -21,16 +21,13 @@
    64px instead of 40px -> every rem-sized element (icons, text, inputs) was
    ~60% too big and #app grew to 640px instead of 400px.
 
-   Reproduce home's two rules verbatim so both pages stay pixel-identical. */
-html {
-  font-size: 54px !important;
-}
-
-@media screen and (min-width: 800px) {
-  html {
-    font-size: 2.5rem !important;
-  }
-}
+   (These two rules are intentionally NOT reproduced anymore - see below.) */
+/* Root rem base is NOT forced here anymore. pages/login/index.html loads
+   assets/js/rem.js, which sets the base from the live viewport (10rem ===
+   screen width, capped at 540px) so the phone layout fits. A stylesheet
+   !important outranks a plain inline style, so the old font-size:54px!important
+   beat rem.js and pinned the page to the 540px design width on phones. The
+   >=800px desktop base still comes from styles.css, exactly like home. */
 
 /* fixed, deterministic letterbox: block body + auto-margin frame.
    Home centres #app through `body{display:flex}`; the auth page mounts three
@@ -284,15 +281,8 @@ body {
    This is applied on BOTH the html element and with !important so it beats the
    inline style AND the old media query, in a single deterministic rule set.
    ====================================================================== */
-html {
-  font-size: 54px !important;
-}
-
-@media screen and (min-width: 800px) {
-  html {
-    font-size: 40px !important;
-  }
-}
+/* (font-size no longer forced here - see the phone-frame note at the top of
+   this file. rem.js owns the mobile base; styles.css owns the >=800px base.) */
 
 /* =========================================================================
    ROOT SCROLLBAR LOCK — the ACTUAL cause of the left/right jump
