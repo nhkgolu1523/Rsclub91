@@ -1,6 +1,19 @@
 # local-only material (raw scrape + backups), not part of the site
 reference/
 backup/
+Promotion Tab/
+language ui.html
+
+# dev-only test dependency (jsdom, used by tools/render-check.js)
+node_modules/
+package-lock.json
+
+# local dev tooling (page builders + verifiers), not part of the site
+tools/
+
+# stray backup/unused scratch exported by the raw scrape
+pages/login/index.backup.html
+assets/images/tip.png
 
 # OS junk
 Thumbs.db

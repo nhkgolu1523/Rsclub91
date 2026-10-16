@@ -1,0 +1,341 @@
+/* =========================================================================
+   Rsclub91 — Auth UI additions (loaded after styles.css)
+   Only adds the few bits the snapshot CSS never shipped (eye placement,
+   logo sizing, view-visibility helpers). Nothing here overrides the
+   original Veer.Game look.
+   ========================================================================= */
+
+/* ---- phone frame ------------------------------------------------------
+   The snapshot was a single-route SPA: #app held exactly one view, so its
+   `width:10rem` phone frame worked. We now mount THREE views inside #app,
+   so the page needs an explicit, deterministic layout.
+
+   Root font-size (1rem) must match pages/home/index.html EXACTLY, otherwise
+   this page renders at a different scale. Home ships two rules and nothing
+   else overrides them:
+       html                         -> inline  style="font-size:54px"
+       @media (min-width:800px)     -> html{font-size:2.5rem!important}
+   So home computes 54px on narrow screens and 2.5rem (=40px against the
+   16px default) on desktop. A previous override here used
+   `min(10vw,64px)!important`, which won the cascade on desktop and produced
+   64px instead of 40px -> every rem-sized element (icons, text, inputs) was
+   ~60% too big and #app grew to 640px instead of 400px.
+
+   Reproduce home's two rules verbatim so both pages stay pixel-identical. */
+html {
+  font-size: 54px !important;
+}
+
+@media screen and (min-width: 800px) {
+  html {
+    font-size: 2.5rem !important;
+  }
+}
+
+/* fixed, deterministic letterbox: block body + auto-margin frame.
+   Home centres #app through `body{display:flex}`; the auth page mounts three
+   views, so we keep body as a block and centre #app with auto margins. The
+   original `@media(max-width:500px){#app{width:100%}}` rule from styles.css
+   still applies on narrow screens for both pages, so no extra max-width is
+   needed here (adding one changed the exact width at the 500px boundary and
+   made login differ from home by a few pixels). */
+body {
+  display: block !important;
+  overflow-x: hidden;
+}
+
+#app {
+  width: 10rem;
+  min-width: 0;
+  margin: 0 auto;
+  flex: 0 0 auto;
+  overflow: hidden;
+  background: var(--bg_color_L1);
+}
+
+/* every view is a full-width block so switching never leaves a gap and the
+   grey body colour can never show through inside the phone frame. */
+.js-view-login,
+.js-view-register,
+.js-view-forgot {
+  width: 100%;
+  min-height: 100vh;
+  background: var(--bg_color_L1);
+}
+
+/* ---- eye (show / hide password) ------------------------------------- */
+.passwordInput__container-input .eye {
+  position: absolute;
+  right: .32rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: .64rem;
+  height: .64rem;
+  object-fit: contain;
+  cursor: pointer;
+  z-index: 2;
+  opacity: .75;
+}
+.passwordInput__container-input .eye:hover { opacity: 1; }
+
+/* when the password is revealed the eye swaps to the "open" icon */
+.passwordInput__container-input .eye.eye-open {
+  content: url("../../assets/images/eye.png");
+}
+
+/* keep typed text clear of the eye icon */
+.passwordInput__container-input input { padding-right: 1.2rem; }
+
+/* ---- navbar logo inside the auth views ------------------------------ */
+.js-view-login .headLogo,
+.js-view-register .headLogo,
+.js-view-forgot .headLogo {
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+/* ---- language flag --------------------------------------------------- */
+.navbar__content-right .img {
+  width: .64rem;
+  height: .64rem;
+  border-radius: 50%;
+  object-fit: cover;
+  vertical-align: middle;
+}
+
+/* ---- view switching (only one auth view visible at a time) ---------- */
+/* (full-width / min-height / background handled by the phone-frame block
+   at the top of this file — nothing extra needed here) */
+
+/* ---- register: invite-code row (was hidden on the original capture) -- */
+.register__container-invitation {
+  margin-bottom: .32rem;
+}
+.register__container-invitation__label {
+  display: flex;
+  align-items: center;
+  color: var(--text_color_L1);
+  font-size: .4rem;
+  margin-bottom: .32rem;
+}
+.register__container-invitation__label svg {
+  width: .64rem;
+  height: .64rem;
+  margin-right: .16rem;
+  color: var(--main-color);
+}
+.register__container-invitation__input input {
+  width: 100%;
+  height: 1.17333rem;
+  padding: .36rem .34667rem;
+  color: var(--text_color_L1);
+  font-size: .37333rem;
+  border: none;
+  border-radius: .26667rem;
+  background: var(--bg_color_L2);
+}
+
+/* ----- FORGOT-PASSWORD HEADING: exact size/alignment parity with login ----
+   The shipped snapshot CSS gives the forgot view its own heading class with a
+   SHORTER min-height and no side padding:
+
+       .rpwd__C-heading[data-v-928a098a]       { min-height:1.86667rem; padding:<none> }
+       .login__container-heading[data-v-47f4cc84] { min-height:2.66667rem; padding:0 .53333rem }
+
+   At 40px/rem that is 74.67px vs 106.67px -> a 32px shorter green banner, so
+   the whole forgot form jumped up ~20px and looked "idher udher" (shifted)
+   beside the login / register views.
+
+   IMPORTANT: these overrides must repeat the `[data-v-928a098a]` attribute
+   because the original rules are class+attribute (specificity 0,2,0). A plain
+   `.rpwd__C-heading` selector (0,1,0) LOSES to them even though auth.css is
+   loaded later. Only box metrics are overridden here — the gradient, colours
+   and typography stay exactly as shipped. */
+
+.rpwd__C-heading[data-v-928a098a] {
+  min-height: 2.66667rem;
+  padding: 0 .53333rem;
+}
+
+/* the original title used margin-left instead of container padding, putting
+   the text at a different x than the login view — drop it so both headings
+   start at the same offset ( .53333rem ). */
+.rpwd__C-heading__title[data-v-928a098a] {
+  margin-left: 0;
+}
+
+/* the original sub-title had a fixed height:1.12rem (44.8px). The English
+   copy wraps to two lines needing ~45px, so it was clipped / shoving the next
+   block. Let it size naturally, exactly like the login sub-title does. */
+.rpwd__C-heading__subTitle[data-v-928a098a] {
+  height: auto;
+  margin-bottom: .53333rem;
+}
+
+/* keep the gap between the heading and the "Phone Reset" tab identical to the
+   login view (login uses margin-top:.4rem on the same tab strip). */
+.rpwd__C .login_container-tab[data-v-928a098a] {
+  margin-top: .4rem;
+}
+
+/* =========================================================================
+   FRAME LOCK — stop the whole page from "hil raha hai" (shifting left/right)
+   when switching between the login / register / forgot-password views.
+   =========================================================================
+
+   WHY IT WAS MOVING
+   -----------------
+   The three views are SIBLINGS inside a single #app container:
+
+       <div id="app">
+         <div class="login__container   js-view-login">    </div>
+         <div class="register__container js-view-register"> </div>
+         <div class="rpwd__C             js-view-forgot">   </div>
+       </div>
+
+   auth.js toggles them by flipping  display:none <-> '' .
+
+   The shipped CSS centres that container with
+
+       html, body { display:flex; justify-content:center }
+
+   and gives it a CONTENT-DRIVEN width:
+
+       #app { width:10rem }                       ( and width:100% <=500px )
+
+   Because #app is a flex item that is centred by its width, and because the
+   three views disagree about their scrollbar gutter:
+
+       .login__container    { overflow-y: scroll }   <- gutter ALWAYS reserved
+       .rpwd__C             { overflow-y: auto   }   <- gutter only on overflow
+
+   ...the container's effective box (and therefore its centre point) changes the
+   moment the visible view changes. The forgot view is also taller than login
+   (two extra password rows + the "Verification Code" row), so it crosses into
+   the scroll state and the frame visibly jumps sideways.
+
+   THE FIX
+   -------
+   Make the frame geometry INDEPENDENT of which view is visible:
+
+     1. Pin the scroll gutter on every view to the same value so width never
+        changes when the visible view changes.
+     2. Give #app a min-width so a narrow view can never shrink the frame.
+     3. Anchor the frame with margin:0 auto instead of relying on the flex
+        centring of a content-sized child, so the centre point is fixed.
+    ====================================================================== */
+
+/* 1. identical scroll gutter on all three views -------------------------- */
+.login__container[data-v-47f4cc84],
+.register__container,
+.rpwd__C[data-v-928a098a] {
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+}
+
+/* keep the scrollbar invisible (the app hides scrollbars) without letting the
+   gutter width collapse — width:0 keeps it hidden, gutter is still reserved */
+.login__container[data-v-47f4cc84]::-webkit-scrollbar,
+.register__container::-webkit-scrollbar,
+.rpwd__C[data-v-928a098a]::-webkit-scrollbar {
+  width: 0;
+  background: transparent;
+}
+
+/* 2. + 3. fixed frame geometry -------------------------------------------
+   The frame must be EXACTLY 10rem and must never be wider than the screen,
+   otherwise it cannot be centred and it hugs one edge (the asymmetry the user
+   sees as "idher udher").                                          */
+#app {
+  width: 10rem;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  flex: none;
+}
+
+/* =========================================================================
+   REM-BASE LOCK — remove the 800px font-size "snap"
+   =========================================================================
+
+   The snapshot ships the base font size two different ways:
+
+      <html style="font-size:54px">                       <- baked-in inline
+      @media (min-width:800px){ html{ font-size:2.5rem !important } }
+
+   so the rem base DISCONTINUOUSLY jumps:
+
+      viewport <  800px  ->  font-size:54px  ->  1rem=54px  -> #app=540px
+      viewport >= 800px  ->  font-size:40px  ->  1rem=40px  -> #app=400px
+
+   On top of that, `2.5rem` on the root element is CIRCULAR (it is defined in
+   terms of itself), so the resolved value depends on the inherited size at
+   evaluation time — it can differ between loads. Resizing the window across
+   800px therefore makes the WHOLE frame jump 540px <-> 400px.
+
+   Fix: state the base font size ONCE, explicitly and continuously, so the rem
+   base is a pure function of the viewport for EVERY width (no 800px cliff).
+
+       < 800px : 54px   (match the snapshot's inline value exactly)
+       >=800px : 40px   (match what 2.5rem was resolving to)
+
+   This is applied on BOTH the html element and with !important so it beats the
+   inline style AND the old media query, in a single deterministic rule set.
+   ====================================================================== */
+html {
+  font-size: 54px !important;
+}
+
+@media screen and (min-width: 800px) {
+  html {
+    font-size: 40px !important;
+  }
+}
+
+/* =========================================================================
+   ROOT SCROLLBAR LOCK — the ACTUAL cause of the left/right jump
+   =========================================================================
+
+   Measured evidence (viewport 567px):
+
+       visible=login   html.width = 567px   #app.x = 13.5    <-- no root bar
+       visible=forgot  html.width = 552px   #app.x =  6.0    <-- root bar!
+
+   Switching to the forgot view makes the DOCUMENT (html) taller than the
+   window. The browser therefore shows a vertical scrollbar ON THE ROOT, which
+   steals 15px of viewport width (567 -> 552). #app is 540px in both states and
+   is centred, so its centre slides (567-540)/2=13.5  ->  (552-540)/2=6 : a
+   7.5px sideways jump of the entire page — the "idher udher".
+
+   Note this is the ROOT scroller, not the .js-view-* scroller, which is why
+   the earlier per-view overflow-y:scroll did not stop it.
+
+   Fix: always reserve the root scrollbar gutter so the viewport width is
+   constant whether or not the visible view overflows.
+
+       scrollbar-gutter: stable   -> keeps the 15px gutter reserved permanently
+       overflow-y: scroll         -> scrollbar is always present (fallback for
+                                     browsers without scrollbar-gutter)
+
+   Either alone is enough; both together cover old and new engines. The
+   scrollbar is made invisible below so reserving the gutter costs no visuals.
+   ====================================================================== */
+html {
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+}
+
+/* keep the reserved root scrollbar invisible (the app hides scrollbars) */
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 0;
+  background: transparent;
+}
+
+html {
+  scrollbar-width: none; /* Firefox: hide it but the gutter stays reserved */
+}
+
+
