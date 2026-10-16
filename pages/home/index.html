@@ -10019,9 +10019,12 @@ document.addEventListener('DOMContentLoaded', function() {
   var prevBtn = navButtons[0];
   var nextBtn = navButtons[1];
   var currentPage = 0;
-  var itemWidth = 374; // Based on HTML style width: 374px
+  /* Item width is measured from the live slide in updateSlider() below - the
+     frozen 374px capture value is wrong once fitSwipes() resizes the slides. */
 
   function updateSlider() {
+    var slide = track.querySelector('.van-swipe-item');
+    var itemWidth = slide ? slide.offsetWidth : 374; // live slide width (fitSwipes)
     var translateX = -(currentPage * itemWidth);
     track.style.transitionDuration = '300ms';
     track.style.transform = 'translateX(' + translateX + 'px)';
@@ -10214,8 +10217,9 @@ document.addEventListener('DOMContentLoaded', function() {
     var matrix = new DOMMatrix(style.transform);
     var currentX = matrix.m41 || 0;
     
-    // Each page is 374px wide
-    var pageWidth = 374;
+    // Each page is as wide as the live slide (fitSwipes resizes them)
+    var slide = section.querySelector('.van-swipe-item');
+    var pageWidth = slide ? slide.offsetWidth : 374; // live page width (fitSwipes)
     
     // Count total pages (van-swipe-item elements)
     var pages = section.querySelectorAll('.van-swipe-item');
