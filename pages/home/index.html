@@ -10212,53 +10212,42 @@ document.addEventListener('DOMContentLoaded', function() {
     e.preventDefault();
     e.stopPropagation();
     
-    // Get current transform X value
-    var style = window.getComputedStyle(track);
-    var matrix = new DOMMatrix(style.transform);
-    var currentX = matrix.m41 || 0;
-    
-    // Each page is as wide as the live slide (fitSwipes resizes them)
-    var slide = section.querySelector('.van-swipe-item');
-    var pageWidth = slide ? slide.offsetWidth : 374; // live page width (fitSwipes)
-    
-    // Count total pages (van-swipe-item elements)
+    // Track the page index on the section itself instead of reading
+    // getComputedStyle(track).transform: during the 0.4s slide animation the
+    // computed transform is an INTERMEDIATE value, so a tap landing mid-slide
+    // produced a non-page-aligned offset (half-cut cards on both edges).
     var pages = section.querySelectorAll('.van-swipe-item');
     var totalPages = pages.length;
     if (totalPages <= 1) return; // No need to slide if only 1 page
-    
-    var maxX = 0;
-    var minX = -((totalPages - 1) * pageWidth);
-    
-    var newX = currentX;
-    
+
+    // Each page is as wide as the live slide (fitSwipes resizes them)
+    var slide = section.querySelector('.van-swipe-item');
+    var pageWidth = slide ? slide.offsetWidth : 374; // live page width (fitSwipes)
+
+    var maxIndex = totalPages - 1;
+    var index = parseInt(section.getAttribute('data-page') || '0', 10);
+    if (isNaN(index) || index < 0) index = 0;
+
     if (navEl.querySelector('.van-icon-arrow')) {
-      // Right arrow → go to next page
-      newX = currentX - pageWidth;
-      if (newX < minX) newX = minX; // Don't go beyond last page
+      // Right arrow: go to next page
+      index = Math.min(index + 1, maxIndex);
     } else if (navEl.querySelector('.van-icon-arrow-left')) {
-      // Left arrow → go to previous page
-      newX = currentX + pageWidth;
-      if (newX > maxX) newX = maxX; // Don't go beyond first page
+      // Left arrow: go to previous page
+      index = Math.max(index - 1, 0);
     }
-    
+    section.setAttribute('data-page', String(index));
+
+    var newX = -(index * pageWidth);
+
     // Apply smooth transition and new position
     track.style.transition = 'transform 0.4s ease';
     track.style.transform = 'translateX(' + newX + 'px)';
-    
+
     // Update disabled states for nav buttons
-    var allNavs = section.querySelectorAll('.nav');
-    allNavs.forEach(function(n) { n.classList.remove('disabled'); });
-    
-    if (newX >= maxX) {
-      // At first page, disable left arrow
-      var leftNav = section.querySelector('.nav:first-child');
-      if (leftNav) leftNav.classList.add('disabled');
-    }
-    if (newX <= minX) {
-      // At last page, disable right arrow
-      var rightNav = section.querySelector('.nav:last-child');
-      if (rightNav) rightNav.classList.add('disabled');
-    }
+    var leftNav = section.querySelector('.nav:first-child');
+    var rightNav = section.querySelector('.nav:last-child');
+    if (leftNav) leftNav.classList.toggle('disabled', index <= 0);
+    if (rightNav) rightNav.classList.toggle('disabled', index >= maxIndex);
   });
 
   // 3b. "View All" (.more) -> open the category listing page.
