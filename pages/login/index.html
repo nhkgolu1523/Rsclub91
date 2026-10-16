@@ -36,7 +36,7 @@
 </div>
 <div data-v-12a80a3e="" class="navbar__content-right">
 <div data-v-8610bd15="" data-v-47f4cc84="">
-<div data-v-8610bd15="" class="right">
+<div data-v-8610bd15="" class="right lang">
 <img data-v-8610bd15="" class="img" src="../../assets/images/flag-en.png" alt="EN">
 <span data-v-8610bd15="" class="languageName">EN</span>
 </div>
@@ -162,7 +162,7 @@
 </div>
 <div data-v-12a80a3e="" class="navbar__content-right">
 <div data-v-8610bd15="" data-v-4752d5f1="">
-<div data-v-8610bd15="" class="right">
+<div data-v-8610bd15="" class="right lang">
 <img data-v-8610bd15="" class="img" src="../../assets/images/flag-en.png" alt="EN">
 <span data-v-8610bd15="" class="languageName">EN</span>
 </div>
@@ -272,7 +272,7 @@
 </div>
 <div data-v-12a80a3e="" class="navbar__content-right">
 <div data-v-8610bd15="" data-v-928a098a="">
-<div data-v-8610bd15="" class="right">
+<div data-v-8610bd15="" class="right lang">
 <img data-v-8610bd15="" class="img" src="../../assets/images/flag-en.png" alt="EN">
 <span data-v-8610bd15="" class="languageName">EN</span>
 </div>
@@ -374,4 +374,363 @@
 
 
 </div><!-- /#app -->
+
+<!-- ================= LANGUAGE POPUP (language ui.html) =================
+     Tapping the header globe (.lang, next to the EN label) opens this
+     bottom sheet. Visuals are the exact ones from "language ui.html":
+     .lang-sheet / .lang-item / .flag / .code / .radio + sheetUp keyframes.
+     Only the open/close wiring is adapted to this page, so it behaves like
+     the Event Rewards popup (#gamePopup) already does here.
+     ==================================================================== -->
+<style>
+  /* Values are kept in raw px exactly as "language ui.html" declares them.
+     Do NOT convert these to rem: this page sets html{font-size:54px}, so rem
+     units here would render the sheet ~3.4x oversized and show a scrollbar. */
+  #langPopup {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 3950;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    background: rgba(0, 0, 0, .55);
+  }
+  #langPopup.lang-popup-hidden { display: none !important; }
+
+  .lang-sheet {
+    width: 100%;
+    /* 10rem follows this page's own bottom-sheet convention (see
+       .dialog-queue-host__content for #gamePopup) and matches the #app frame.
+       The mockup's 560px is 20px wider than #app here and spills outside it. */
+    max-width: 10rem;
+    background: #22222b;
+    border-radius: 16px 16px 0 0;
+    padding: 8px 0 10px;
+    box-shadow: 0 -6px 30px rgba(0, 0, 0, 0.55);
+    animation: sheetUp .28s cubic-bezier(.22, .8, .35, 1);
+    overflow: hidden;
+  }
+
+  @keyframes sheetUp {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
+  }
+
+  .lang-item {
+    display: flex;
+    align-items: center;
+    height: 66px;
+    padding: 0 22px;
+    position: relative;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* divider line (not on last row) */
+  .lang-item + .lang-item::before {
+    content: "";
+    position: absolute;
+    left: 22px;
+    right: 22px;
+    top: 0;
+    height: 1px;
+    background: #35353f;
+  }
+
+  .lang-item .flag {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    flex: 0 0 30px;
+    display: block;
+    overflow: hidden;
+  }
+
+  .lang-item .code {
+    margin-left: 15px;
+    font-size: 17px;
+    font-weight: 500;
+    color: #ffffff;
+    letter-spacing: .4px;
+    line-height: 1;
+  }
+
+  .lang-item .radio {
+    margin-left: auto;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 1.5px solid #5a5a66;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background .18s ease, border-color .18s ease;
+  }
+
+  .lang-item .radio svg {
+    width: 14px;
+    height: 14px;
+    opacity: 0;
+    transform: scale(.5);
+    transition: opacity .18s ease, transform .18s ease;
+  }
+
+  .lang-item.active .radio {
+    background: #22c55e;
+    border-color: #22c55e;
+  }
+
+  .lang-item.active .radio svg {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  /* The header flag is swapped by cloning the chosen row's .flag SVG, so it
+     always matches the sheet exactly. Size it to the header icon slot. */
+  .lang > svg.lang-flag {
+    width: .53333rem;
+    height: .53333rem;
+    border-radius: 50%;
+    display: block;
+    flex: 0 0 auto;
+    overflow: hidden;
+  }
+</style>
+
+<div id="langPopup" class="lang-popup-hidden" role="dialog" aria-modal="true" aria-label="Language">
+  <div class="lang-sheet" id="langSheet">
+
+    <!-- EN -->
+    <div class="lang-item active" data-lang="EN">
+      <svg class="flag" viewBox="0 0 24 24">
+        <defs>
+          <clipPath id="clipUS"><circle cx="12" cy="12" r="12"/></clipPath>
+          <pattern id="usStars" width="2.3" height="2.15" patternUnits="userSpaceOnUse">
+            <circle cx="1.15" cy="1.07" r="0.42" fill="#ffffff"/>
+          </pattern>
+        </defs>
+        <g clip-path="url(#clipUS)">
+          <rect width="24" height="24" fill="#ffffff"/>
+          <g fill="#B22234">
+            <rect x="0" y="0"        width="24" height="1.846"/>
+            <rect x="0" y="3.692"    width="24" height="1.846"/>
+            <rect x="0" y="7.385"    width="24" height="1.846"/>
+            <rect x="0" y="11.077"   width="24" height="1.846"/>
+            <rect x="0" y="14.769"   width="24" height="1.846"/>
+            <rect x="0" y="18.462"   width="24" height="1.846"/>
+            <rect x="0" y="22.154"   width="24" height="1.846"/>
+          </g>
+          <rect x="0" y="0" width="11.5" height="12.923" fill="#3C3B6E"/>
+          <rect x="0.55" y="0.55" width="10.4" height="11.82" fill="url(#usStars)"/>
+        </g>
+      </svg>
+      <span class="code">EN</span>
+      <span class="radio">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M4.5 12.5L9.5 17.5L19.5 6.5" stroke="#ffffff" stroke-width="3"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+    </div>
+
+    <!-- HD -->
+    <div class="lang-item" data-lang="HD">
+      <svg class="flag" viewBox="0 0 24 24">
+        <defs>
+          <clipPath id="clipIN1"><circle cx="12" cy="12" r="12"/></clipPath>
+        </defs>
+        <g clip-path="url(#clipIN1)">
+          <rect x="0" y="0"  width="24" height="8" fill="#FF9933"/>
+          <rect x="0" y="8"  width="24" height="8" fill="#FFFFFF"/>
+          <rect x="0" y="16" width="24" height="8" fill="#138808"/>
+          <g stroke="#000080" stroke-width="0.32" fill="none">
+            <circle cx="12" cy="12" r="3.1" stroke-width="0.62"/>
+            <circle cx="12" cy="12" r="0.55" fill="#000080" stroke="none"/>
+            <path d="M15.10 12.00L8.90 12.00
+                     M14.99 12.80L9.01 11.20
+                     M14.68 13.55L9.32 10.45
+                     M14.19 14.19L9.81 9.81
+                     M13.55 14.68L10.45 9.32
+                     M12.80 14.99L11.20 9.01
+                     M12.00 15.10L12.00 8.90
+                     M11.20 14.99L12.80 9.01
+                     M10.45 14.68L13.55 9.32
+                     M9.81 14.19L14.19 9.81
+                     M9.32 13.55L14.68 10.45
+                     M9.01 12.80L14.99 11.20"/>
+          </g>
+        </g>
+      </svg>
+      <span class="code">HD</span>
+      <span class="radio">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M4.5 12.5L9.5 17.5L19.5 6.5" stroke="#ffffff" stroke-width="3"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+    </div>
+
+    <!-- TA -->
+    <div class="lang-item" data-lang="TA">
+      <svg class="flag" viewBox="0 0 24 24">
+        <defs>
+          <clipPath id="clipIN2"><circle cx="12" cy="12" r="12"/></clipPath>
+        </defs>
+        <g clip-path="url(#clipIN2)">
+          <rect x="0" y="0"  width="24" height="8" fill="#FF9933"/>
+          <rect x="0" y="8"  width="24" height="8" fill="#FFFFFF"/>
+          <rect x="0" y="16" width="24" height="8" fill="#138808"/>
+          <g stroke="#000080" stroke-width="0.32" fill="none">
+            <circle cx="12" cy="12" r="3.1" stroke-width="0.62"/>
+            <circle cx="12" cy="12" r="0.55" fill="#000080" stroke="none"/>
+            <path d="M15.10 12.00L8.90 12.00
+                     M14.99 12.80L9.01 11.20
+                     M14.68 13.55L9.32 10.45
+                     M14.19 14.19L9.81 9.81
+                     M13.55 14.68L10.45 9.32
+                     M12.80 14.99L11.20 9.01
+                     M12.00 15.10L12.00 8.90
+                     M11.20 14.99L12.80 9.01
+                     M10.45 14.68L13.55 9.32
+                     M9.81 14.19L14.19 9.81
+                     M9.32 13.55L14.68 10.45
+                     M9.01 12.80L14.99 11.20"/>
+          </g>
+        </g>
+      </svg>
+      <span class="code">TA</span>
+      <span class="radio">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M4.5 12.5L9.5 17.5L19.5 6.5" stroke="#ffffff" stroke-width="3"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+    </div>
+
+    <!-- TE -->
+    <div class="lang-item" data-lang="TE">
+      <svg class="flag" viewBox="0 0 24 24">
+        <defs>
+          <clipPath id="clipIN3"><circle cx="12" cy="12" r="12"/></clipPath>
+        </defs>
+        <g clip-path="url(#clipIN3)">
+          <rect x="0" y="0"  width="24" height="8" fill="#FF9933"/>
+          <rect x="0" y="8"  width="24" height="8" fill="#FFFFFF"/>
+          <rect x="0" y="16" width="24" height="8" fill="#138808"/>
+          <g stroke="#000080" stroke-width="0.32" fill="none">
+            <circle cx="12" cy="12" r="3.1" stroke-width="0.62"/>
+            <circle cx="12" cy="12" r="0.55" fill="#000080" stroke="none"/>
+            <path d="M15.10 12.00L8.90 12.00
+                     M14.99 12.80L9.01 11.20
+                     M14.68 13.55L9.32 10.45
+                     M14.19 14.19L9.81 9.81
+                     M13.55 14.68L10.45 9.32
+                     M12.80 14.99L11.20 9.01
+                     M12.00 15.10L12.00 8.90
+                     M11.20 14.99L12.80 9.01
+                     M10.45 14.68L13.55 9.32
+                     M9.81 14.19L14.19 9.81
+                     M9.32 13.55L14.68 10.45
+                     M9.01 12.80L14.99 11.20"/>
+          </g>
+        </g>
+      </svg>
+      <span class="code">TE</span>
+      <span class="radio">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M4.5 12.5L9.5 17.5L19.5 6.5" stroke="#ffffff" stroke-width="3"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ================= LANGUAGE POPUP JS ================= -->
+<script>
+(function () {
+  var popup = document.getElementById('langPopup');
+  var sheet = document.getElementById('langSheet');
+  var langBtns = document.querySelectorAll('.lang');
+  if (!popup || !sheet || !langBtns.length) return;
+
+  function openLang() { popup.classList.remove('lang-popup-hidden'); }
+  function closeLang() { popup.classList.add('lang-popup-hidden'); }
+
+  /* This page mounts three views (login / register / forgot), so there can be
+     more than one language button - mirror the chosen flag into every one. */
+  function setHeaderFlag(fromItem) {
+    var src = fromItem.querySelector('.flag');
+    if (!src) return;
+    for (var b = 0; b < langBtns.length; b++) {
+      var langBtn = langBtns[b];
+      var icon = src.cloneNode(true);
+      icon.classList.remove('flag');
+      icon.classList.add('lang-flag');
+      icon.removeAttribute('id');
+      var g = icon.querySelector('g[clip-path]');
+      if (g) g.removeAttribute('clip-path');
+      var ids = icon.querySelectorAll('[id]');
+      for (var k = 0; k < ids.length; k++) ids[k].removeAttribute('id');
+
+      var existing = langBtn.querySelector('svg.lang-flag');
+      if (existing) { existing.parentNode.replaceChild(icon, existing); }
+      else {
+        var img = langBtn.querySelector('img');
+        if (img) img.parentNode.replaceChild(icon, img);
+        else langBtn.insertBefore(icon, langBtn.firstChild);
+      }
+    }
+  }
+
+  function setLabel(lang) {
+    for (var b = 0; b < langBtns.length; b++) {
+      var span = langBtns[b].querySelector('span');
+      if (span) span.textContent = lang;
+      langBtns[b].setAttribute('data-lang', lang);
+    }
+  }
+
+  for (var b = 0; b < langBtns.length; b++) {
+    langBtns[b].style.cursor = 'pointer';
+    langBtns[b].addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      openLang();
+    });
+  }
+
+  sheet.addEventListener('click', function (e) {
+    var item = e.target.closest('.lang-item');
+    if (!item) return;
+    var rows = sheet.querySelectorAll('.lang-item');
+    for (var r = 0; r < rows.length; r++) rows[r].classList.remove('active');
+    item.classList.add('active');
+    var lang = item.getAttribute('data-lang');
+    setLabel(lang);
+    setHeaderFlag(item);
+    closeLang();
+  });
+
+  popup.addEventListener('click', function (e) {
+    if (e.target === popup) closeLang();
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !popup.classList.contains('lang-popup-hidden')) closeLang();
+  });
+
+  var initial = sheet.querySelector('.lang-item.active');
+  if (initial) setHeaderFlag(initial);
+})();
+</script>
+<!-- LANGUAGE_POPUP_JS_END -->
 </body></html>
