@@ -13,7 +13,6 @@ tools/
 
 # stray backup/unused scratch exported by the raw scrape
 pages/login/index.backup.html
-assets/images/tip.png
 
 # OS junk
 Thumbs.db
