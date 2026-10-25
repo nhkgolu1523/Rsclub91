@@ -122,7 +122,7 @@
   /* ---------------------------------------------------------------------
      6. Buttons become "active" (gradient) only when the form is filled
      --------------------------------------------------------------------- */
-  function bindEnableState(scopeSel, buttonSel, fields) {
+  function bindEnableState(scopeSel, buttonSel, fields, mode) {
     var scope = qs(scopeSel);
     if (!scope) return;
     var button = qs(buttonSel, scope);
@@ -130,9 +130,12 @@
     var inputs = fields.map(function (sel) { return qs(sel, scope); }).filter(Boolean);
 
     function refresh() {
-      var ok = inputs.length > 0 && inputs.every(function (i) {
-        return i.value && i.value.trim().length > 0;
+      var filled = inputs.map(function (i) {
+        return !!(i.value && i.value.trim().length > 0);
       });
+      // mode 'any': button active as soon as any field has text (login).
+      // default   : button active only when every field is filled.
+      var ok = inputs.length > 0 && (mode === 'any' ? filled.some(Boolean) : filled.every(Boolean));
       button.classList.toggle('active', ok);
     }
     inputs.forEach(function (i) {
@@ -212,13 +215,15 @@
     initCheckboxes();
     initNavigation();
 
-    // "Log in" enabled when password is typed (phone + email variants)
+    // "Log in" enabled as soon as the user starts typing (phone variant)
     bindEnableState('.js-view-login .js-login-panel.activecontent .signIn__container',
       '.signIn__container-button button:not(.register)',
-      ['input[name="userNumber"]', '.passwordInput__container-input input']);
+      ['input[name="userNumber"]', '.passwordInput__container-input input'],
+      'any');
     bindEnableState('.js-view-login .js-login-panel:not(.activecontent) .signIn__container',
       '.signIn__container-button button:not(.register)',
-      ['input[name="userEmail"]', '.passwordInput__container-input input']);
+      ['input[name="userEmail"]', '.passwordInput__container-input input'],
+      'any');
 
     // Register enabled when phone + both passwords are filled
     bindEnableState('.js-view-register .register__container',

@@ -27,6 +27,10 @@
 
   apply();
 
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', apply, false);
+  }
+  window.addEventListener('load', apply, false);
   window.addEventListener('resize', apply, false);
   window.addEventListener('orientationchange', apply, false);
   window.addEventListener('pageshow', apply, false);

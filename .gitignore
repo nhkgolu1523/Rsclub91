@@ -2,6 +2,12 @@
 reference/
 backup/
 Promotion Tab/
+Wallet Tab/
+VIP Tab/
+Withdraw Tab/
+Deposit Tab/
+ACCOUNT TAB/
+HEADER ISAK DEKHO/
 language ui.html
 
 # dev-only test dependency (jsdom, used by tools/render-check.js)
@@ -18,3 +24,11 @@ pages/login/index.backup.html
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# test screenshots captured during development
+*-screenshot.png
+coming-soon-screenshot.png
+
+# page backups
+pages/**/*.backup.html
+pages/**/*.backup.css

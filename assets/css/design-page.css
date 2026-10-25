@@ -1,0 +1,212 @@
+/* Shared shell for pages copied from the supplied design snapshots. */
+html,
+body {
+  min-height: 100%;
+  background: #0b0b10;
+}
+#app {
+  background: var(--bg_color_L1, #111217);
+}
+#screenity-ui {
+  display: none !important;
+}
+.navbar__content-left .van-icon-arrow-left {
+  cursor: pointer;
+}
+.rs-toast {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 99999;
+  max-width: 8rem;
+  padding: .22rem .42rem;
+  border-radius: .4rem;
+  background: rgba(20, 21, 27, .96);
+  color: #fff;
+  font-size: .32rem;
+  line-height: 1.45;
+  text-align: center;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity .18s ease;
+  pointer-events: none;
+}
+.rs-toast--show {
+  opacity: 1;
+}
+.fun-tabs,
+.fun-tabs__tab-list,
+.van-tabs__nav,
+.bonus__container-tabs,
+.coupon-container-tabs {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.fun-tabs::-webkit-scrollbar,
+.fun-tabs__tab-list::-webkit-scrollbar,
+.van-tabs__nav::-webkit-scrollbar,
+.bonus__container-tabs::-webkit-scrollbar,
+.coupon-container-tabs::-webkit-scrollbar {
+  display: none;
+}
+.fun-tabs,
+.van-tabs__nav {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+}
+.fun-tabs__tab-list {
+  min-width: max-content;
+}
+.fun-tabs__active-line {
+  display: none !important;
+}
+.funtab_item,
+.tab_item,
+.van-tab,
+.bonus__container-tabs li,
+.coupon-container-tabs__item,
+.ar-searchbar__selector {
+  cursor: pointer;
+}
+.ar-searchbar__selector.is-rs-open {
+  border-color: rgba(32, 211, 116, .75);
+}
+.rs-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 6500;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  visibility: hidden;
+  pointer-events: none;
+}
+.rs-sheet__mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, .62);
+  opacity: 0;
+  transition: opacity .2s ease;
+}
+.rs-sheet__panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 10rem;
+  max-height: 72vh;
+  padding: .24rem .34rem calc(.3rem + env(safe-area-inset-bottom));
+  border-radius: .34rem .34rem 0 0;
+  background: #191a20;
+  box-shadow: 0 -.12rem .6rem rgba(0, 0, 0, .4);
+  transform: translateY(104%);
+  transition: transform .24s ease;
+}
+.rs-sheet--open {
+  visibility: visible;
+  pointer-events: auto;
+}
+.rs-sheet--open .rs-sheet__mask {
+  opacity: 1;
+}
+.rs-sheet--open .rs-sheet__panel {
+  transform: translateY(0);
+}
+.rs-sheet__handle {
+  width: .72rem;
+  height: .08rem;
+  margin: 0 auto .3rem;
+  border-radius: 99px;
+  background: #3b3d46;
+}
+.rs-sheet__title {
+  margin: 0 0 .22rem;
+  color: #f4f5f7;
+  font-size: .38rem;
+  font-weight: 600;
+  text-align: center;
+}
+.rs-sheet__hint {
+  margin: -.1rem 0 .25rem;
+  color: #858895;
+  font-size: .27rem;
+  text-align: center;
+}
+.rs-sheet__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.rs-sheet__list::-webkit-scrollbar {
+  display: none;
+}
+.rs-sheet__option {
+  display: block;
+  width: 100%;
+  min-height: .88rem;
+  padding: .24rem .22rem;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, .06);
+  background: transparent;
+  color: #d7d7d7;
+  font-size: .34rem;
+  line-height: 1.3;
+  text-align: center;
+}
+.rs-sheet__option:last-child {
+  border-bottom: 0;
+}
+.rs-sheet__option--active {
+  color: #20d374;
+  font-weight: 600;
+}
+.rs-sheet__empty {
+  padding: .65rem .2rem;
+  color: #858895;
+  font-size: .32rem;
+  text-align: center;
+}
+.rs-sheet__date {
+  width: 100%;
+  margin: .18rem 0 .26rem;
+  padding: .22rem .26rem;
+  border: 1px solid #363842;
+  border-radius: .18rem;
+  background: #111217;
+  color: #f4f5f7;
+  font-size: .34rem;
+  color-scheme: dark;
+}
+.rs-sheet__actions {
+  display: flex;
+  gap: .2rem;
+}
+.rs-sheet__button {
+  flex: 1;
+  min-height: .8rem;
+  border: 0;
+  border-radius: .22rem;
+  background: #262830;
+  color: #d7d7d7;
+  font-size: .33rem;
+}
+.rs-sheet__button--primary {
+  background: linear-gradient(130deg, #c5bc0c 0%, #94b20b 33%, #20d374 66%, #0cbac5 100%);
+  color: #1a1a2c;
+  font-weight: 600;
+}
+.rs-sheet-open {
+  overflow: hidden;
+}
+@media (min-width: 541px) {
+  .rs-sheet__panel {
+    margin-bottom: 0;
+    border-radius: .34rem .34rem 0 0;
+  }
+}

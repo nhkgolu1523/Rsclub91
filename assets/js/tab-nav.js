@@ -19,7 +19,6 @@
 
   var FADE_MS = 0;            /* no animation - tab switches feel instant */
   var CACHE = {};             /* url -> { body, title } for instant back-nav */
-  var SCROLL = {};            /* url -> scrollY, so returning restores position */
   var CURRENT = null;         /* absolute url of the page currently in the body */
 
   function canFetch(url) {
@@ -90,8 +89,12 @@
   /* Keep the same <link rel=stylesheet> elements between pages. If the target
      page uses the same CSS files (our activity/category pages all do) we do not
      have to touch the head at all, which avoids any style flash. */
-  function sheetKey(node) {
-    return node.getAttribute('href') || '';
+  function sheetKey(node, baseUrl) {
+    var href = node.getAttribute('href') || '';
+    if (baseUrl) {
+      try { return new URL(href, baseUrl).href; } catch (e) { /* keep raw */ }
+    }
+    return href;
   }
 
   /* Inline <style> blocks carry page-specific rules that the shared sheets do
@@ -145,33 +148,84 @@
     }
   }
 
-  function syncHead(doc) {
+  /* Resolve every stylesheet to an absolute URL BEFORE the address bar moves.
+     Otherwise a relative <link> from the old page starts resolving against the
+     new path after pushState (home's popups.css became /pages/assets/...). */
+  function normalizeSheets() {
+    var links = document.head.querySelectorAll('link[rel="stylesheet"]');
+    for (var i = 0; i < links.length; i++) {
+      var l = links[i];
+      if (l.href) l.setAttribute('href', l.href);
+    }
+  }
+
+  function incomingSheets(doc, url) {
+    var result = [];
+    var links = doc.head.querySelectorAll('link[rel="stylesheet"]');
+    for (var i = 0; i < links.length; i++) {
+      var raw = links[i].getAttribute('href') || '';
+      var href = raw;
+      try { href = new URL(raw, url).href; } catch (e) { /* keep raw */ }
+      result.push({ node: links[i], href: href });
+    }
+    return result;
+  }
+
+  function waitForSheet(link) {
+    return new Promise(function (resolve) {
+      var done = false;
+      function finish() {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        link.removeEventListener('load', finish);
+        link.removeEventListener('error', finish);
+        resolve();
+      }
+      var timer = setTimeout(finish, 1800);
+      link.addEventListener('load', finish);
+      link.addEventListener('error', finish);
+    });
+  }
+
+  /* Add the incoming page's styles and WAIT until they are parsed. The old
+     page stays visible during that wait, so the new body can never paint for a
+     frame with the previous page's CSS or with no CSS at all. */
+  function ensureSheets(doc, url) {
+    normalizeSheets();
+
+    var have = {};
     var current = document.head.querySelectorAll('link[rel="stylesheet"]');
-    var incoming = doc.head.querySelectorAll('link[rel="stylesheet"]');
+    for (var i = 0; i < current.length; i++) have[current[i].href] = true;
 
-    var nowKeys = {};
-    for (var i = 0; i < current.length; i++) nowKeys[sheetKey(current[i])] = true;
-
-    var wantKeys = {};
-    var toAdd = [];
+    var incoming = incomingSheets(doc, url);
+    var waits = [];
     for (var j = 0; j < incoming.length; j++) {
-      var k = sheetKey(incoming[j]);
-      wantKeys[k] = true;
-      if (!nowKeys[k]) toAdd.push(incoming[j]);
-    }
-
-    /* add anything the new page needs that we do not have yet */
-    for (var m = 0; m < toAdd.length; m++) {
-      var l = toAdd[m].cloneNode(true);
+      var href = incoming[j].href;
+      if (!href || have[href]) continue;
+      have[href] = true;
+      var l = incoming[j].node.cloneNode(true);
+      l.setAttribute('href', href);
       l.setAttribute('data-tab-nav', '1');
+      var wait = waitForSheet(l);
       document.head.appendChild(l);
+      waits.push(wait);
     }
+    return Promise.all(waits);
+  }
 
-    /* drop sheets we added for a previous page that this page does not want */
+  /* Drop only stylesheets TabNav added for the page we are leaving. Original
+     page sheets (for example popups.css) stay in the document and have already
+     been normalized to absolute URLs. */
+  function dropOldSheets(doc, url) {
+    var wanted = {};
+    var incoming = incomingSheets(doc, url);
+    for (var i = 0; i < incoming.length; i++) wanted[incoming[i].href] = true;
+
     var mine = document.head.querySelectorAll('link[data-tab-nav="1"]');
-    for (var n = 0; n < mine.length; n++) {
-      var el = mine[n];
-      if (!wantKeys[sheetKey(el)]) el.parentNode.removeChild(el);
+    for (var j = mine.length - 1; j >= 0; j--) {
+      var el = mine[j];
+      if (!wanted[el.href]) el.parentNode.removeChild(el);
     }
   }
 
@@ -183,18 +237,19 @@
      background colour, nothing flashes white in between.
      ------------------------------------------------------------------------ */
 
-  /* Lock the page background so a one-frame gap can never show white. */
-  (function lockBackground() {
+  /* Keep the app canvas dark at every window width. The old code sampled the
+     starting page's grey body background and locked it on <html>, which showed
+     through around the 400px app column and during swaps. */
+  (function lockTheme() {
     try {
-      var cs = window.getComputedStyle(document.documentElement);
-      var bg = cs.backgroundColor;
-      if (!bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') {
-        var bcs = document.body ? window.getComputedStyle(document.body).backgroundColor : '';
-        bg = (bcs && bcs !== 'rgba(0, 0, 0, 0)') ? bcs : '#9195a3';
-      }
       var s = document.createElement('style');
-      s.setAttribute('data-tab-nav-bg', '1');
-      s.textContent = 'html{background-color:' + bg + ' !important}';
+      s.setAttribute('data-tab-nav-theme', '1');
+      /* The center CTA label was inheriting the page's grey/black fallback on
+         some swaps. Keep it readable on every tab: always white, with a soft
+         shadow so it also works over the light notch artwork. */
+      s.textContent = 'html,body{background-color:#0b0b10 !important;}' +
+        '.tabbar__center-text,.tabbar__center-text.active{color:#FFFFFF !important;' +
+        'text-shadow:0 1px 2px rgba(0,0,0,.85),0 0 1px rgba(0,0,0,.9) !important;}';
       document.head.appendChild(s);
     } catch (e) { /* harmless */ }
   })();
@@ -204,73 +259,86 @@
      The actual swap. Parses the fetched HTML and replaces everything inside
      <body>, then re-runs the page's scripts and re-arms lazy images.
      ------------------------------------------------------------------------ */
-  function swapIn(html, url, title, activeLabel) {
+  function swapIn(html, url, title, activeLabel, skipHistory) {
     var doc = new DOMParser().parseFromString(html, 'text/html');
 
-    syncHead(doc);
-    syncStyles(doc);
+    return ensureSheets(doc, url).then(function () {
+      /* Move the URL only after the new CSS is ready, but BEFORE importing the
+         body. From this point on every relative inline asset (logo, tabbar
+         wheel, banner backgrounds) resolves against the page being mounted,
+         not the page the user just left. */
+      if (!skipHistory) syncUrl(url);
 
-    var incomingBody = doc.body;
-    var newBody = document.body;
+      var incomingRoot = doc.documentElement;
+      var incomingBody = doc.body;
+      var newBody = document.body;
 
-    /* copy class / style the new page wants on <body> (theme + root font size) */
-    newBody.className = incomingBody.className;
-    if (incomingBody.getAttribute('style') !== null) {
-      newBody.setAttribute('style', incomingBody.getAttribute('style'));
-    } else {
-      newBody.removeAttribute('style');
-    }
+      /* keep <html> class/style in step with the mounted page (root font size,
+         page-level theme flags, etc.) */
+      document.documentElement.className = incomingRoot.className || '';
+      if (incomingRoot.getAttribute('style') !== null) {
+        document.documentElement.setAttribute('style', incomingRoot.getAttribute('style'));
+      } else {
+        document.documentElement.removeAttribute('style');
+      }
 
-    /* replace the whole body content in one go - no flash, no reflow storm */
-    while (newBody.firstChild) newBody.removeChild(newBody.firstChild);
-    var kids = incomingBody.childNodes;
-    for (var i = 0; i < kids.length; i++) {
-      newBody.appendChild(document.importNode(kids[i], true));
-    }
+      /* inline <style> blocks have no network wait, but they must be parsed
+         after the URL moved too, so any relative url() inside them is correct */
+      syncStyles(doc);
+      dropOldSheets(doc, url);
 
-    if (title) document.title = title;
+      /* copy class / style the new page wants on <body> (theme + root font size) */
+      newBody.className = incomingBody.className;
+      if (incomingBody.getAttribute('style') !== null) {
+        newBody.setAttribute('style', incomingBody.getAttribute('style'));
+      } else {
+        newBody.removeAttribute('style');
+      }
 
-    runScripts(newBody);
-    armLazyImages(newBody);
+      /* replace the whole body content in one go - no flash, no reflow storm */
+      while (newBody.firstChild) newBody.removeChild(newBody.firstChild);
+      var kids = incomingBody.childNodes;
+      for (var i = 0; i < kids.length; i++) {
+        newBody.appendChild(document.importNode(kids[i], true));
+      }
 
-    /* remember what is actually mounted, so a later tap on the same route
-       is a no-op instead of a pointless re-swap */
-    CURRENT = url;
+      if (title) document.title = title;
 
-    /* Keep the address bar in step with what is mounted. Without this,
-       location.href still points at the ORIGINAL page after a swap, so a
-       second tap re-navigates (double-click / double-tap felt like it fired
-       the same tab twice). */
-    syncUrl(url);
+      window.__rsTabSwap = true;
+      runScripts(newBody);
+      armLazyImages(newBody);
 
-    /* The body was replaced, so the tab node we cached for "this page's own
-       tab" is detached now. The incoming page carries its own server-rendered
-       `active` class, which is the authoritative answer for the page that is
-       about to be on screen - re-read it here, BEFORE markActive() below
-       overrides the highlight with the tapped tab. Without this, a later
-       Account tap on the new page would "revert" the pill onto the tab of the
-       page we just left. */
-    captureOwnTab(true);
+      /* remember what is actually mounted, so a later tap on the same route
+         is a no-op instead of a pointless re-swap */
+      CURRENT = url;
 
-    /* After the swap the incoming page may mark a different tab as active
-       (e.g. going from Activity to Home marks "Home"). We override that with
-       the tab the user actually tapped, so the green highlight always lands
-       on the tapped tab - the same feel the pages had before. */
-    if (activeLabel) markActive(activeLabel);
+      /* The body was replaced, so the tab node we cached for "this page's own
+         tab" is detached now. The incoming page carries its own server-rendered
+         `active` class, which is the authoritative answer for the page that is
+         about to be on screen - re-read it here, BEFORE markActive() below
+         overrides the highlight with the tapped tab. Without this, a later
+         Account tap on the new page would "revert" the pill onto the tab of the
+         page we just left. */
+      captureOwnTab(true);
 
-    /* let late bootstrappers know a new page was mounted */
-    try {
-      document.dispatchEvent(new Event('tabnav:page', { bubbles: true }));
-    } catch (e) { /* very old browser, harmless */ }
+      /* After the swap the incoming page may mark a different tab as active
+         (e.g. going from Activity to Home marks "Home"). We override that with
+         the tab the user actually tapped, so the green highlight always lands
+         on the tapped tab - the same feel the pages had before. */
+      if (activeLabel) markActive(activeLabel);
 
-    /* After the swapped-in page's own scripts have had their turn (they run
-       async when they are external <script src>), re-assert the tapped tab so
-       nothing can leave the bar without a green highlight. */
-    if (activeLabel) {
-      window.setTimeout(function () { markActive(activeLabel); }, 0);
-    }
+      /* let late bootstrappers know a new page was mounted */
+      try {
+        document.dispatchEvent(new Event('tabnav:page', { bubbles: true }));
+      } catch (e) { /* very old browser, harmless */ }
 
-    SCROLL[url] = 0;
+      /* After the swapped-in page's own scripts have had their turn (they run
+         async when they are external <script src>), re-assert the tapped tab so
+         nothing can leave the bar without a green highlight. */
+      if (activeLabel) {
+        window.setTimeout(function () { markActive(activeLabel); }, 0);
+      }
+    });
   }
 
   /* Keep the address bar in step with the body we have mounted. A body swap
@@ -318,11 +386,39 @@
   /* Public: navigate to a page instantly, falling back to a normal load.       */
   /* -------------------------------------------------------------------------- */
   var busy = false;
+  var pendingNav = null;
 
-  function smoothGo(url, activeLabel) {
-    var target = abs(url);
+  function isLoggedIn() {
+    try { return !!localStorage.getItem('rsclub_uid'); } catch (e) { return false; }
+  }
 
-    if (busy) return;
+  function authTarget(source) {
+    var url;
+    try { url = new URL(source, location.href); } catch (e) { return source; }
+    var path = url.pathname.toLowerCase();
+    if (isLoggedIn()) {
+      if (/\/pages\/promotion\/index\.html$/.test(path)) {
+        url.pathname = url.pathname.replace(/\/pages\/promotion\/index\.html$/i, '/pages/promotion/logged-in/index.html');
+      }
+    } else if (/\/pages\/promotion\/logged-in\/index\.html$/.test(path)) {
+      url.pathname = url.pathname.replace(/\/pages\/promotion\/logged-in\/index\.html$/i, '/pages/promotion/index.html');
+    }
+    return url.href;
+  }
+
+  function smoothGo(url, activeLabel, fromHistory) {
+    /* Back/forward has already moved the URL, so never rewrite it or apply the
+       logged-in/guest remapping - history must restore the exact entry. */
+    var target = fromHistory ? abs(url) : authTarget(abs(url));
+
+    /* Fast tapping used to DROP every click while the first swap was running.
+       Remember the most recent target instead, then run it immediately after
+       the current mount finishes. A rapid Home -> Activity -> Promotion ->
+       Account sequence therefore always ends on Account. */
+    if (busy) {
+      pendingNav = { url: target, label: activeLabel, history: !!fromHistory };
+      return;
+    }
 
     /* Tapping a tab whose target IS the page already in the body (e.g.
        Promotion or Account while on Home) must not re-fetch and re-swap - that
@@ -331,27 +427,36 @@
        location.href - the URL can be out of sync with the body. */
     if (target === CURRENT) return;
 
-    if (!canFetch(target)) { location.href = url; return; }
+    if (!canFetch(target)) { location.href = target; return; }
 
     busy = true;
 
-    /* remember where the user was on the page they are leaving */
-    SCROLL[abs(location.href)] =
-      window.pageYOffset || document.documentElement.scrollTop || 0;
+    function release() {
+      busy = false;
+      if (!pendingNav) return;
+      var next = pendingNav;
+      pendingNav = null;
+      smoothGo(next.url, next.label, next.history);
+    }
 
     function finish(html, title) {
-      /* one synchronous frame: parse -> swap -> restore scroll -> done.
-         No fade, no timeout, so it feels instant and nothing flashes. */
-      swapIn(html, target, title, activeLabel);
-      nudgeReady();
-      var y = SCROLL[target] || 0;
-      window.scrollTo(0, y);
-      busy = false;
+      try {
+        swapIn(html, target, title, activeLabel, !!fromHistory).then(function () {
+          nudgeReady();
+          /* tab switches always start at the top; restoring the previous
+             scroll made the app look like its navbar/content had vanished */
+          window.scrollTo(0, 0);
+          release();
+        }, fallback);
+      } catch (e) {
+        fallback();
+      }
     }
 
     function fallback() {
       busy = false;
-      location.href = url;          /* identical to the old behaviour */
+      pendingNav = null;
+      location.href = target;          /* identical to the old behaviour */
     }
 
     /* already fetched once? swap instantly, zero wait */
@@ -506,6 +611,36 @@
     document.addEventListener('DOMContentLoaded', captureOwnTab);
   }
 
+  /* One capture-phase delegate for the whole app. It survives body swaps, so
+     a page script that binds its own tabs with window.location (Activity does
+     exactly that) can never turn a tab tap into a white full-page reload. */
+  function defaultTabTarget(label) {
+    if (label === 'home') return '/pages/home/index.html';
+    if (label === 'activity') {
+      return isLoggedIn() ? '/pages/activity/index.html' : '/pages/activity/guest.html';
+    }
+    if (label === 'promotion') {
+      return isLoggedIn() ? '/pages/promotion/logged-in/index.html' : '/pages/promotion/index.html';
+    }
+    if (label === 'account' && isLoggedIn()) return '/pages/account/index.html';
+    return null;
+  }
+
+  function wireGlobalTabs() {
+    document.addEventListener('click', function (e) {
+      var tab = e.target && e.target.closest && e.target.closest('.tabbar .tabbar__items-tab');
+      if (!tab || tab.classList.contains('placeholder')) return;
+
+      var label = (tab.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      var target = defaultTabTarget(label);
+      if (!target) return;                 /* guest Account keeps its popup */
+
+      e.preventDefault();
+      e.stopPropagation();                 /* old page handlers must not run */
+      smoothGo(target, label);
+    }, true);
+  }
+
   /* Wire the bottom nav on any page that has it.                               */
   /* -------------------------------------------------------------------------- */
   function wireTabs(routes) {
@@ -551,7 +686,21 @@
   function boot() {
     /* the page the browser loaded is what is currently mounted */
     if (CURRENT === null) CURRENT = abs(location.href);
+
+    /* Resolve this page's own relative <link> sheets now, while the URL still
+       points at this page. This is what stops them 404ing after the first
+       pushState. */
+    normalizeSheets();
+
+    /* The tabbar wheel and header logo appear on every route; warm them so a
+       fast switch never shows a blank icon for a frame. */
+    ['/assets/images/logo-rsclub91.png', '/assets/images/wheel.png'].forEach(function (src) {
+      var img = new Image();
+      img.src = src;
+    });
+
     armLazyImages(document);
+    wireGlobalTabs();
     wireSmoothLinks();
 
     /* Back/forward: the URL changed without a reload, so re-mount whichever
@@ -560,14 +709,14 @@
     window.addEventListener('popstate', function () {
       var here = abs(location.href);
       if (here === CURRENT) return;
-      /* a route we already fetched swaps instantly; anything else does a
-         normal load, so history can never leave the page blank. */
-      if (CACHE[here]) {
-        var doc = new DOMParser().parseFromString(CACHE[here].body, 'text/html');
-        swapIn(CACHE[here].body, here, CACHE[here].title || doc.title || '');
-      } else {
+      /* The URL has already moved; mount that exact page without touching
+         history. Cached routes swap instantly, new ones are fetched, and only
+         a failed fetch falls back to a normal load. */
+      if (!canFetch(here)) {
         location.reload();
+        return;
       }
+      smoothGo(here, null, true);
     });
   }
 

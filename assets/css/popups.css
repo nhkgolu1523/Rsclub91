@@ -1,0 +1,307 @@
+/* =====================================================================
+   Login / welcome + first-deposit popups, copied from the original
+   Veer.Game designs. Only the popup rules are included here - no page
+   background or layout rules.
+   ===================================================================== */
+
+/* ---------------------------------------------------- dialog queue host */
+.dialog-queue-host[data-v-55c359df] {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  outline: none;
+  z-index: 3900;
+}
+.dialog-queue-host__overlay[data-v-55c359df] {
+  position: absolute;
+  inset: 0;
+  background: #00000080;
+}
+.dialog-queue-host__content[data-v-55c359df] {
+  position: relative;
+  z-index: 1;
+  max-width: calc(100vw - .42667rem);
+}
+.dialog-queue-host[hidden],
+.dialog-queue-host[data-v-55c359df][hidden] { display: none !important; }
+
+/* ------------------------------------------------- welcome announcement */
+.announcement-dialog[data-v-254516c1] {
+  width: min(8.26667rem, 100vw - .64rem);
+  border-radius: .2rem;
+  background: var(--bg_color_L1);
+  color: var(--text_color_L1);
+  overflow: hidden;
+}
+.announcement-dialog__header[data-v-254516c1] {
+  background: var(--main_gradient-color);
+  text-align: center;
+  height: 1.17333rem;
+  line-height: 1.17333rem;
+  color: #fff;
+  font-weight: 700;
+  font-size: .42667rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.announcement-dialog__content[data-v-254516c1] {
+  height: 9.33333rem;
+  padding: .4rem .26667rem;
+  overflow-y: auto;
+  word-break: break-word;
+}
+.announcement-dialog__content .rs-popup-heading,
+.announcement-dialog__content .rs-popup-text,
+.announcement-dialog__content .rs-popup-tagline {
+  font-family: "Comic Sans MS", "Segoe UI", sans-serif;
+  color: #cec6ce;
+  text-align: center;
+}
+.announcement-dialog__content .rs-popup-heading {
+  margin: 0 0 .24rem;
+  font-size: .37333rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.announcement-dialog__content .rs-popup-text {
+  margin: 0 0 .26667rem;
+  font-size: .32rem;
+  line-height: 1.5;
+}
+.announcement-dialog__content .rs-popup-tagline {
+  margin: 0 0 .26667rem;
+  font-size: .32rem;
+  font-weight: 700;
+}
+.announcement-dialog__content[data-v-254516c1] img {
+  max-width: 7.73333rem;
+  width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+.announcement-dialog__button[data-v-254516c1] {
+  display: block;
+  margin: .32rem auto .37333rem;
+  width: 80%;
+  height: .93333rem;
+  border: 0;
+  border-radius: 1.06667rem;
+  background: var(--main_gradient-color);
+  color: #fff;
+  font-size: .42667rem;
+  font-weight: 700;
+  letter-spacing: .06667rem;
+  font-family: Inter, sans-serif;
+  cursor: pointer;
+}
+
+/* -------------------------------------------------- first deposit dialog */
+.first-recharge-queue-dialog[data-v-c5cb751e] {
+  width: min(8.26667rem, 100vw - .64rem);
+  border-radius: .26667rem;
+  background: var(--bg_color_L2);
+  color: var(--text_color_L1);
+  position: relative;
+}
+.first-recharge-queue-dialog__header[data-v-c5cb751e] {
+  min-height: 1.86667rem;
+  padding-top: .33333rem;
+  border-radius: .26667rem .26667rem 0 0;
+  background-color: var(--bg_color_L3);
+  text-align: center;
+}
+.first-recharge-queue-dialog__title[data-v-c5cb751e] {
+  font-size: .37333rem;
+}
+.first-recharge-queue-dialog__tip[data-v-c5cb751e] {
+  margin-top: .26667rem;
+  font-size: .29333rem;
+  font-weight: 400;
+  color: var(--text_color_L2);
+}
+.first-recharge-queue-dialog__body[data-v-c5cb751e] {
+  max-height: calc(100dvh - 8.4rem);
+  padding: .26667rem .13333rem;
+  background-color: var(--bg_color_L2);
+  overflow: auto;
+}
+.first-recharge-queue-dialog__body[data-v-c5cb751e] .first_list-item {
+  background: var(--bg_color_L3);
+  box-shadow: none;
+}
+.first-recharge-queue-dialog__footer[data-v-c5cb751e] {
+  min-height: 1.33333rem;
+  padding: 0 .26667rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .26667rem;
+  border-radius: 0 0 .26667rem .26667rem;
+  background-color: var(--bg_color_L3);
+}
+.first-recharge-queue-dialog__today[data-v-c5cb751e] {
+  display: flex;
+  align-items: center;
+  gap: .16rem;
+  color: var(--text_color_L2);
+  font-size: .32rem;
+}
+.first-recharge-queue-dialog__button[data-v-c5cb751e] {
+  width: 2.66667rem;
+  min-height: .66667rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: .33333rem;
+  background: var(--main_gradient-color);
+  color: var(--text_color_L4);
+  font-size: .37333rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.first-recharge-queue-dialog__close[data-v-c5cb751e] {
+  position: absolute;
+  width: .8rem;
+  height: .8rem;
+  border: 0;
+  border-radius: 50%;
+  top: auto !important;
+  right: auto !important;
+  left: 50% !important;
+  bottom: -.93333rem !important;
+  transform: translate(-50%) !important;
+  z-index: 9999;
+  touch-action: manipulation;
+  background: url(../png/close-DWvIiUgo.png) no-repeat center/contain;
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------ bonus tier card */
+.first_list-item[data-v-48dabef8] {
+  padding: .26667rem;
+  border-radius: .26667rem;
+  background: var(--bg_color_L2);
+}
+.first_list-item .head[data-v-48dabef8] {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: .18667rem;
+}
+.first_list-item .head .title[data-v-48dabef8] {
+  font-size: .37333rem;
+  color: var(--text_color_L1);
+}
+.first_list-item .head .title > span[data-v-48dabef8] {
+  margin-left: .10667rem;
+  color: var(--norm_secondary-color);
+}
+.first_list-item .head .orange[data-v-48dabef8] {
+  font-size: .34667rem;
+  color: var(--norm_secondary-color);
+}
+.first_list-item .description[data-v-48dabef8] {
+  font-size: .29333rem;
+  color: var(--text_color_L2);
+  margin-bottom: .26667rem;
+}
+.first_list-item .foot[data-v-48dabef8] {
+  display: flex;
+  align-items: center;
+}
+.first_list-item .foot > div[data-v-48dabef8] {
+  flex: 1;
+}
+.first_list-item .foot .btn[data-v-48dabef8] {
+  width: 2.13333rem;
+  min-height: .66667rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  font-size: .32rem;
+  margin-left: .56rem;
+  border-radius: .13333rem;
+  padding: 0 .13333rem;
+  color: var(--text_color_L4);
+  cursor: pointer;
+}
+.first_list-item .foot .btn.n1[data-v-48dabef8] {
+  background: var(--main_gradient-color);
+}
+.first_list-item .foot .btn.n2[data-v-48dabef8] {
+  border: .01333rem solid var(--norm_secondary-color);
+  color: var(--norm_secondary-color);
+}
+.first_list-item .foot .btn.n3[data-v-48dabef8] {
+  box-shadow: var(--BoxShadowColor-12);
+  background: var(--linearGradien-17);
+}
+.first_list-item + .first_list-item[data-v-48dabef8] {
+  margin-top: .26667rem;
+}
+
+/* --------------------------------------------------------- progress bar */
+.progress[data-v-bff59ba2] {
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+}
+.progress .step[data-v-bff59ba2] {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%) translateY(-50%);
+  color: var(--text_color_L1);
+}
+
+/* ---------------------------------------------------- small Vant pieces */
+.first-recharge-queue-dialog__today[data-v-c5cb751e] {
+  cursor: pointer;
+  user-select: none;
+}
+.dialog-queue-host .van-checkbox {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+.dialog-queue-host .van-checkbox__icon {
+  width: .42667rem;
+  height: .42667rem;
+  margin-right: .12rem;
+  border: .02667rem solid var(--text_color_L3);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: transparent;
+  flex: none;
+  transition: background .16s ease, border-color .16s ease;
+}
+.dialog-queue-host .van-checkbox__icon .van-icon {
+  display: none !important;
+}
+.dialog-queue-host .van-checkbox__icon::after {
+  content: "\2713";
+  font-size: .3rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text_color_L1);
+  opacity: 0;
+  transform: scale(.55);
+  transition: opacity .16s ease, transform .16s ease;
+}
+.dialog-queue-host .van-checkbox__icon--checked {
+  background: var(--main-color);
+  border-color: var(--main-color);
+}
+.dialog-queue-host .van-checkbox__icon--checked::after {
+  opacity: 1;
+  transform: scale(1);
+}
