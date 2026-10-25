@@ -28,6 +28,46 @@
   var PENDING_MAX_AGE = 20000;
   var MAX_AVATAR = 20;
 
+  /* Apply the cached avatar to every avatar <img> as early as possible, so a
+     page refresh never flashes the default avatar before the cached one. */
+  (function earlyAvatar() {
+    var AVATAR_SEL = '.userInfo__container-content__avatar img,.userAvatar,'
+      + '.userInfo__container-setting-center-header img';
+    var uid = '';
+    var src = '';
+    try { uid = localStorage.getItem('rsclub_uid') || ''; } catch (e) {}
+    if (uid) {
+      try { src = localStorage.getItem(AVATAR_SRC_KEY) || ''; } catch (e) {}
+      if (!src) {
+        var id = '';
+        try { id = localStorage.getItem(AVATAR_KEY) || ''; } catch (e) {}
+        if (id) src = AVATAR_BASE + Math.min(Math.max(parseInt(id, 10) || 1, 1), MAX_AVATAR) + '.png';
+      }
+    }
+    if (!src) return;
+
+    function paint(root) {
+      qa(AVATAR_SEL, root).forEach(function (img) {
+        if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+      });
+      /* also the avatar grid highlight lives on <html data-rs-avatar-id> */
+      var idMatch = src.match(/(\d+)\.png$/);
+      if (idMatch) document.documentElement.setAttribute('data-rs-avatar-id', idMatch[1]);
+    }
+
+    paint(document);
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function () { paint(document); }, { once: true });
+    }
+    if (typeof MutationObserver === 'function') {
+      var mo = new MutationObserver(function () { paint(document); });
+      mo.observe(document.documentElement, { childList: true, subtree: true });
+      /* stop watching after the page settles - the server value takes over */
+      setTimeout(function () { mo.disconnect(); }, 5000);
+    }
+    window.addEventListener('load', function () { paint(document); });
+  })();
+
   var LANGUAGES = [
     { key: 'English', code: 'EN', label: 'English', html: 'en', aliases: ['english', 'en', 'eng'] },
     { key: 'Hindi',   code: 'HD', label: 'हिंदी',  html: 'hi', aliases: ['hindi', 'हिंदी', 'hd'] },
