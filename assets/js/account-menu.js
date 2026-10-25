@@ -43,7 +43,6 @@
     'settings': '../settings/index.html',
     'feedback': '../feedback/index.html',
     'announcement': '../notification-center/index.html?tab=information',
-    'beginner\'s guide': '../about-us/index.html',
     'about us': '../about-us/index.html'
   };
   var SETTINGS = {
@@ -76,6 +75,7 @@
 
     if (!url) {
       if (key === 'customer service') toast('Customer service will be available soon.');
+      else if (key === 'beginner\'s guide') toast('Beginner guide will be available soon.');
       return;
     }
     e.preventDefault();
@@ -120,4 +120,12 @@
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', profile);
   else profile();
+
+  /* show a one-shot success toast after a feedback submit redirect */
+  try {
+    if (sessionStorage.getItem('rs_feedback_toast') === '1') {
+      sessionStorage.removeItem('rs_feedback_toast');
+      setTimeout(function () { toast('Your feedback has been submitted. Thank you!'); }, 150);
+    }
+  } catch (e) {}
 })();

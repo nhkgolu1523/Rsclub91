@@ -284,14 +284,40 @@
     bind(submit, function () {
       var value = area ? area.value.trim() : '';
       if (!value) return toast('Please describe your feedback.');
-      try {
-        var list = JSON.parse(localStorage.getItem('rsclub_feedback') || '[]');
-        list.push({ text: value, at: new Date().toISOString() });
-        localStorage.setItem('rsclub_feedback', JSON.stringify(list));
-      } catch (e) {}
-      if (area) area.value = '';
-      toast('Feedback submitted');
-      window.setTimeout(back, 700);
+
+      var uid = stored('rsclub_uid');
+      var now = new Date();
+      function p(n) { return (n < 10 ? '0' : '') + n; }
+      var time = now.getFullYear() + '-' + p(now.getMonth() + 1) + '-' + p(now.getDate())
+        + ' ' + p(now.getHours()) + ':' + p(now.getMinutes()) + ':' + p(now.getSeconds());
+
+      /* keep the typed text visible; show the loading spinner over the page */
+      if (window.RSLoader) window.RSLoader.show();
+
+      var done = function () {
+        try { sessionStorage.setItem('rs_feedback_toast', '1'); } catch (e) {}
+        window.setTimeout(function () { window.location.href = ACCOUNT; }, 500);
+      };
+
+      if (uid && window.fetch) {
+        var url = 'https://rsclub91-62526-default-rtdb.firebaseio.com/USERS/'
+          + encodeURIComponent(uid) + '/FEEDBACKS.json';
+        var payload = {};
+        payload[value] = time;
+        fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }).then(function () {
+          done();
+        }).catch(function () {
+          if (window.RSLoader) window.RSLoader.hide();
+          toast('Could not submit feedback');
+        });
+      } else {
+        if (window.RSLoader) window.RSLoader.hide();
+        toast('Could not submit feedback');
+      }
     });
   }
 

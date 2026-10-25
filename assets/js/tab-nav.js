@@ -19,7 +19,8 @@
 
   var FADE_MS = 0;            /* no animation - tab switches feel instant */
   var CACHE = {};             /* url -> { body, title } for instant back-nav */
-  var CURRENT = null;         /* absolute url of the page currently in the body */
+  var CURRENT = null;
+  var prefetched = false;   /* main tabs warmed into CACHE once */         /* absolute url of the page currently in the body */
 
   function canFetch(url) {
     if (typeof window.fetch !== 'function') return false;
@@ -702,6 +703,36 @@
     armLazyImages(document);
     wireGlobalTabs();
     wireSmoothLinks();
+
+    /* Warm the main tab pages into the swap cache so the first tab tap is as
+       fast as the cached ones (no fetch wait, just the body swap). Runs once,
+       in the background, and only when the network is idle-ish. */
+    (function prefetchTabs() {
+      if (prefetched) return;
+      prefetched = true;
+      if (typeof window.fetch !== 'function') return;
+      var routes = ['/pages/home/index.html', '/pages/activity/index.html', '/pages/promotion/index.html', '/pages/account/index.html'];
+      var run = function () {
+        for (var i = 0; i < routes.length; i++) {
+          (function (r) {
+            var u = abs(r);
+            if (CACHE[u] || u === CURRENT) return;
+            fetch(u, { credentials: 'same-origin' })
+              .then(function (resp) { return resp.ok ? resp.text() : null; })
+              .then(function (html) {
+                if (!html) return;
+                try {
+                  var doc = new DOMParser().parseFromString(html, 'text/html');
+                  CACHE[u] = { body: html, title: doc.title || '' };
+                } catch (e) {}
+              })
+              .catch(function () {});
+          })(routes[i]);
+        }
+      };
+      if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout: 2500 });
+      else setTimeout(run, 1200);
+    })();
 
     /* Back/forward: the URL changed without a reload, so re-mount whichever
        page the browser moved to. Keeps the address bar, the body and the
