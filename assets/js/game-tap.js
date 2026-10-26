@@ -208,11 +208,11 @@
       return;
     }
 
-    /* WINGO opens its own game page (same value used for balance). */
+    /* WINGO opens its own game page (same origin works locally + on Vercel). */
     if (/^wingo(\s|$)/.test(gameName) || gameName === 'win go' || gameName === 'wingo') {
       var u = '';
       try { u = String(localStorage.getItem('rsclub_uid') || '').trim(); } catch (e) {}
-      window.location.href = 'http://127.0.0.1:8000/index.html' + (u ? '?uid=' + encodeURIComponent(u) : '');
+      window.location.href = '/Games/Wingo/index.html' + (u ? '?uid=' + encodeURIComponent(u) : '');
       return;
     }
 

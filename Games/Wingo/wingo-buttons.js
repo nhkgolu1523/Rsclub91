@@ -4,11 +4,21 @@
   if (window.__RSWingoButtons) return;
   window.__RSWingoButtons = true;
 
-  var HOME = 'http://127.0.0.1:5500/pages/home/index.html';
-  var WALLET = 'http://127.0.0.1:5500/pages/wallet/index.html';
-  var DEPOSIT = 'http://127.0.0.1:5500/pages/deposit/index.html';
-  var DETAIL = 'http://127.0.0.1:5500/pages/notification-center/index.html';
-  var SUPPORT = 'http://127.0.0.1:5500/pages/agent-line-service/index.html';
+  /* Derive the website base so it works both locally (WINGO on :8000,
+     site on :5500) and on a real host like Vercel (same origin). */
+  var SITE_BASE = (function () {
+    var h = location.hostname, p = location.port, proto = location.protocol;
+    if (p === '8000' || /^localhost:8000$/.test(location.host) || /^127\.0\.0\.1:8000$/.test(location.host)) {
+      return proto + '//' + h + ':5500';
+    }
+    return location.origin;                 /* Vercel / any single-origin host */
+  })();
+
+  var HOME = SITE_BASE + '/pages/home/index.html';
+  var WALLET = SITE_BASE + '/pages/wallet/index.html';
+  var DEPOSIT = SITE_BASE + '/pages/deposit/index.html';
+  var DETAIL = SITE_BASE + '/pages/notification-center/index.html';
+  var SUPPORT = SITE_BASE + '/pages/agent-line-service/index.html';
 
   function go(url) { window.location.href = url; }
 

@@ -1061,6 +1061,28 @@
     seedSession();
     setInterval(seedSession, 500);
 
+    /* Brand: Rsclub91 - force document title + header logo */
+    var BRAND = 'Rsclub91';
+    var LOGO_URL = (function () {
+      var h = location.hostname, proto = location.protocol;
+      if (location.port === '8000') return proto + '//' + h + ':5500/assets/images/logo-rsclub91.png';
+      return location.origin + '/assets/images/logo-rsclub91.png';
+    })();
+    (function brand() {
+        function setTitle() { if (document.title !== BRAND) document.title = BRAND; }
+        function setLogo() {
+            var el = document.querySelector('.navbar__content-center .headLogo');
+            if (!el) return;
+            el.style.setProperty('background-image', 'url("' + LOGO_URL + '")', 'important');
+            el.style.setProperty('background-repeat', 'no-repeat', 'important');
+            el.style.setProperty('background-position', 'center', 'important');
+            el.style.setProperty('background-size', 'contain', 'important');
+        }
+        setTitle(); setLogo();
+        setInterval(function () { setTitle(); setLogo(); }, 800);
+        window.addEventListener('load', function () { setTitle(); setLogo(); });
+    })();
+
     /* keep the app pinned to the game route whatever happens.
        Default selected mode is 30SEC (typeId=30). */
     var GAME_ROUTE = '#/home/AllLotteryGames/WinGo?typeId=30';
