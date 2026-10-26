@@ -53,7 +53,13 @@
     var uid = stored('rsclub_uid');
     var avatar = stored('rsclub_avatar');
 
-    qa('.userInfo__container-content-nickname').forEach(function (el) { el.textContent = user; });
+    qa('.userInfo__container-content-nickname').forEach(function (el) {
+      /* set ONLY the nickname text - never wipe the siblings (the VIP level
+         badge .n0 / edit pencil live in the same container). */
+      var h3 = q('h3', el);
+      if (h3) h3.textContent = user;
+      else if (!el.children.length) el.textContent = user;
+    });
 
     qa('.userInfo__container-setting-center-content').forEach(function (row) {
       var h = q('h5', row);

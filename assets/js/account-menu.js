@@ -92,8 +92,8 @@
       if (el) el.textContent = user;
     });
 
-    var nick = document.querySelector('.userInfo__container-content-nickname');
-    if (nick) nick.textContent = user;
+    var nickEl = document.querySelector('.userInfo__container-content-nickname h3');
+    if (nickEl) nickEl.textContent = user;
 
     document.querySelectorAll('.userInfo__container-setting-center-content').forEach(function (row) {
       var h = row.querySelector('h5');
