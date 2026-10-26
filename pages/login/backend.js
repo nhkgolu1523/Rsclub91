@@ -67,6 +67,18 @@
     }).catch(function () {});
   }
 
+  function createBalanceNode(uid) {
+    return fetch(endpoint(USERS + '/' + uid + '/BALANCE'), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        'DEPOSIT-HISTORY': '',
+        'MAIN-BALANCE': 0,
+        'WITHDRAWL-HISTORY': ''
+      })
+    }).catch(function () {});
+  }
+
   function createWelcomeNotification(uid) {
     return Promise.all([
       putNotif(uid, 'NOTIFICATION', 'WELCOME', 'New Member', WELCOME_MESSAGE),
@@ -244,6 +256,8 @@
         })
       }).catch(function () {}).then(function () {
         return createInviteCode(uid);
+      }).then(function () {
+        return createBalanceNode(uid);
       }).then(function () {
         return createWelcomeNotification(uid);
       }).then(function () { return uid; });

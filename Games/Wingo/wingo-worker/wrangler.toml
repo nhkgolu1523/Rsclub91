@@ -1,0 +1,24 @@
+# ============================================================
+#  WINGO RESULTS GENERATOR  (Cloudflare Worker)
+# ------------------------------------------------------------
+#  * Har roz 4:00 AM IST (22:30 UTC) automatic chalta hai.
+#  * Poore din (4AM -> agle 4AM) ke SAARE modes ke results
+#    PEHLE SE generate karke Firebase me likh deta hai.
+#  * Result pehli baar likhne ke baad KABHI change nahi hota
+#    (check-before-write); running period kabhi touch nahi.
+#  * Firebase me latest 500 finished periods rakhe jate hain.
+#
+#  NOTE: name alag hai "wingo-results" - aapke existing
+#        workers (99infinity, www) ko touch nahi karega.
+# ============================================================
+
+name = "wingo-results"
+main = "src/index.js"
+compatibility_date = "2026-10-25"
+
+# 22:30 UTC = 04:00 IST (IST = UTC + 5:30) -> poore din ka batch
+[triggers]
+crons = ["30 22 * * *"]
+
+[vars]
+FB_BASE = "https://rsclub91-62526-default-rtdb.firebaseio.com/GAME-RESULTS/WINGO"

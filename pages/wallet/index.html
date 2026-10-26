@@ -45,5 +45,20 @@
 <script src="../../assets/js/subpage.js"></script>
 <script src="app.js"></script>
 <script src="../../assets/js/profile-prefs.js" data-rs-profile="1"></script>
+<script src="../../assets/js/balance.js"></script>
+<script>
+(function () {
+  function paint(v) {
+    var txt = window.RSBalance.format(v);
+    /* Main wallet only (progressBarsL). 3rd-party wallet (progressBarsR)
+       is intentionally left untouched. */
+    var main = document.querySelector('.progressBarsL > h3');
+    if (main) main.textContent = txt;
+    var header = document.querySelector('.wallet-container-header-belly > div');
+    if (header) header.textContent = txt;
+  }
+  if (window.RSBalance) window.RSBalance.watch(paint);
+})();
+</script>
 </body>
 </html>

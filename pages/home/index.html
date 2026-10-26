@@ -10133,6 +10133,7 @@ document.addEventListener('DOMContentLoaded', function() {
 <script src="../../assets/js/login-gate.js"></script>
 <script src="../../assets/js/game-names.js"></script>
 <script src="../../assets/js/game-tap.js"></script>
+<script src="../../assets/js/wingo-link.js"></script>
 <!-- ================= EVENT REWARDS POPUP JS ================= -->
 <script>
 (function(){
@@ -10905,6 +10906,15 @@ document.addEventListener('DOMContentLoaded', function() {
 <script src="../../assets/js/popup-config.js"></script>
 <script src="../../assets/js/popups.js"></script>
 <script src="../../assets/js/profile-prefs.js" data-rs-profile="1"></script>
+<script src="../../assets/js/balance.js"></script>
+<script>
+(function () {
+  var el = document.querySelector('#headerUserBar .balance .amount');
+  if (el && window.RSBalance) {
+    window.RSBalance.watch(function (v) { el.textContent = window.RSBalance.format(v); });
+  }
+})();
+</script>
 </body>
 </html>
 
