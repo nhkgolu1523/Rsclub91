@@ -9077,11 +9077,32 @@ document.addEventListener('DOMContentLoaded', function() {
     els().forEach(function (el) { el.textContent = txt; });
   }
   if (window.RSBalance) window.RSBalance.watch(paint);
+
+  var toastEl = null, toastTimer = null;
+  function toast(msg) {
+    if (!toastEl) {
+      toastEl = document.createElement('div');
+      toastEl.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);'
+        + 'z-index:99999;background:rgba(30,30,36,.94);color:#fff;font-size:.32rem;'
+        + 'padding:.2rem .4rem;border-radius:.4rem;opacity:0;transition:opacity .2s;'
+        + 'pointer-events:none;max-width:70%;text-align:center;';
+      document.body.appendChild(toastEl);
+    }
+    toastEl.textContent = msg;
+    requestAnimationFrame(function () { toastEl.style.opacity = '1'; });
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.style.opacity = '0'; }, 1400);
+  }
+
   var refresh = document.querySelector('.icon-refreshBalance');
   if (refresh) {
     refresh.style.cursor = 'pointer';
     refresh.addEventListener('click', function () {
-      if (window.RSBalance) window.RSBalance.get(function (v) { if (v !== null) paint(v); });
+      if (!window.RSBalance) return;
+      window.RSBalance.get(function (v) {
+        if (v !== null) { paint(v); toast('Balance refreshed'); }
+        else { toast('Could not refresh'); }
+      });
     });
   }
 })();
