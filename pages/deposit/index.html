@@ -15,5 +15,22 @@
 <script src="../../assets/js/subpage.js"></script>
 <script src="app.js"></script>
 <script src="../../assets/js/profile-prefs.js" data-rs-profile="1"></script>
+<script src="../../assets/js/balance.js"></script>
+<script>
+(function () {
+  function paint(v) {
+    var p = document.querySelector('.balanceAssets__main > p');
+    if (p) p.textContent = window.RSBalance.format(v);
+  }
+  if (window.RSBalance) window.RSBalance.watch(paint);
+  var refresh = document.querySelector('.balanceAssets__main > img');
+  if (refresh) {
+    refresh.style.cursor = 'pointer';
+    refresh.addEventListener('click', function () {
+      if (window.RSBalance) window.RSBalance.get(function (v) { if (v !== null) paint(v); });
+    });
+  }
+})();
+</script>
 </body>
 </html>

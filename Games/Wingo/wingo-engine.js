@@ -1083,6 +1083,13 @@
         window.addEventListener('load', function () { setTitle(); setLogo(); });
     })();
 
+    /* Hide the two small floating side icons (changlong + customer). */
+    (function hideFloatingIcons() {
+        var st = document.createElement('style');
+        st.textContent = '.changlongEnter,.changlong,.customer,#customerId{display:none!important;visibility:hidden!important;}';
+        (document.head || document.documentElement).appendChild(st);
+    })();
+
     /* keep the app pinned to the game route whatever happens.
        Default selected mode is 30SEC (typeId=30). */
     var GAME_ROUTE = '#/home/AllLotteryGames/WinGo?typeId=30';
