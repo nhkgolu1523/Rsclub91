@@ -6,11 +6,24 @@
 <meta name="robots" content="noindex,nofollow"/>
 <link rel="icon" type="image/png" href="assets/images/favicon-rsclub91.png"/>
 <title>Rsclub91</title>
-<!-- The real pages live under pages/. This entry file just forwards the root
-     URL to the home page so https://<app>.vercel.app/ does not 404. -->
-<meta http-equiv="refresh" content="0; url=pages/home/index.html"/>
+<!-- The real pages live under pages/. This entry file forwards the root URL.
+     Invitation link (?ref=/invitationCode=/code=) -> login/register page
+     (code capture + register view). Otherwise -> home. -->
 <link rel="canonical" href="pages/home/index.html"/>
-<script>window.location.replace('pages/home/index.html');</script>
+<script>
+(function(){
+  var ref = '';
+  try {
+    var rp = new URLSearchParams(location.search || '');
+    ref = rp.get('ref') || rp.get('invitationCode') || rp.get('code') || '';
+  } catch (e) {}
+  if (ref) {
+    window.location.replace('pages/login/index.html?ref=' + encodeURIComponent(ref));
+  } else {
+    window.location.replace('pages/home/index.html');
+  }
+})();
+</script>
 <style>
 html,body{height:100%;width:100%;margin:0;background:#9195a3;display:flex;align-items:center;justify-content:center;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
 a{color:#fff;text-decoration:none;font-size:15px}
