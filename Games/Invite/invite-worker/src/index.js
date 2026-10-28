@@ -333,18 +333,8 @@ async function handleDeposit(env, body) {
       }
     }
 
-    /* per-level COMMISSION: inviter ke AGENT-LEVEL (L0..L10) par, down-level = 'level' */
-    const agentLv = (parent.LEVEL || 'L0');
-    const rate = commissionRate(cfg, agentLv, level);
-    const comm = r2(amount * rate);
-    if (comm > 0) {
-      const cid = newId('C');
-      await fbSet(env, parentPath + '/COMMISSIONS/' + encodeURIComponent(cid), {
-        AMOUNT: comm, LV: level, 'AGENT-LV': agentLv, FROM: childUid, DAY: dayStamp(), TIME: stamp()
-      });
-      const tx = 'CMM:' + cid;
-      await creditBalance(env, parentUid, comm, tx);
-    }
+    /* NOTE: commission deposit par NAHI - game turnover (bet) par milta hai
+       (original: "valid bet amount" / "turnover"). Wahi /bet me handle hota hai. */
 
     childUid = parentUid;
   }
@@ -386,6 +376,19 @@ async function handleBet(env, body) {
       Number((parent.DIRECT && parent.DIRECT['DEPOSIT-AMOUNT']) || 0);
     const lv = tierFor(cfg, teamNum, teamBet, teamDeposit);
     await fbPatch(env, parentPath, { 'TEAM-BET': teamBet, LEVEL: lv });
+
+    /* COMMISSION (original): inviter ke AGENT-LEVEL (L0..L10) par, down-level = 'level',
+       hisaab = game TURNOVER (stake) ka %. deposit par nahi. */
+    const agentLv = (parent.LEVEL || 'L0');
+    const rate = commissionRate(cfg, agentLv, level);
+    const comm = r2(stake * rate);
+    if (comm > 0) {
+      const cid = newId('C');
+      await fbSet(env, parentPath + '/COMMISSIONS/' + encodeURIComponent(cid), {
+        AMOUNT: comm, LV: level, 'AGENT-LV': agentLv, FROM: childUid, DAY: dayStamp(), TIME: stamp()
+      });
+      await creditBalance(env, parentUid, comm, 'CMM:' + cid);
+    }
 
     childUid = parentUid;
   }
