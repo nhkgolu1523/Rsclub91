@@ -333,13 +333,14 @@ async function handleDeposit(env, body) {
       }
     }
 
-    /* per-level COMMISSION (deposit × rate) */
-    const rate = commissionRate(cfg, level);
+    /* per-level COMMISSION: inviter ke AGENT-LEVEL (L0..L10) par, down-level = 'level' */
+    const agentLv = (parent.LEVEL || 'L0');
+    const rate = commissionRate(cfg, agentLv, level);
     const comm = r2(amount * rate);
     if (comm > 0) {
       const cid = newId('C');
       await fbSet(env, parentPath + '/COMMISSIONS/' + encodeURIComponent(cid), {
-        AMOUNT: comm, LV: level, FROM: childUid, DAY: dayStamp(), TIME: stamp()
+        AMOUNT: comm, LV: level, 'AGENT-LV': agentLv, FROM: childUid, DAY: dayStamp(), TIME: stamp()
       });
       const tx = 'CMM:' + cid;
       await creditBalance(env, parentUid, comm, tx);
@@ -351,10 +352,14 @@ async function handleDeposit(env, body) {
   return json({ ok: true });
 }
 
-function commissionRate(cfg, level) {
-  const cr = cfg['COMMISSION-RATE'] || {};
-  const k = 'LV' + level;
-  return Number(cr[k]) || 0;
+/* commission % = inviter ke agent-level (L0..L10) par, aur down-level (1..6).
+   Table original rebate-ratio page se (config: COMMISSION-RATE-BYLEVEL). */
+function commissionRate(cfg, agentLevel, downLevel) {
+  const tbl = cfg['COMMISSION-RATE-BYLEVEL'] || {};
+  const lv = 'L' + (Number(agentLevel) || 0);
+  const row = tbl[lv] || tbl['L0'] || [0];
+  const pct = Number(row[Math.max(0, (Number(downLevel) || 1) - 1)]) || 0;
+  return pct / 100;                 /* percent -> fraction */
 }
 
 /* POST /bet  { uid, stake }  -> team-betting + tier recompute */
