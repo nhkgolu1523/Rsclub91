@@ -208,7 +208,14 @@
   }
 
   function boot() {
-    showView(initialView());
+    /* invitation link (?ref=/invitationCode=) -> register view + code yaad rakho */
+    var refCode = '';
+    try {
+      var rp = new URLSearchParams(window.location.search || '');
+      refCode = rp.get('ref') || rp.get('invitationCode') || rp.get('code') || '';
+      if (refCode) localStorage.setItem('rs_ref', String(refCode).trim());
+    } catch (e) {}
+    showView(refCode ? 'register' : initialView());
     initLoginTabs();
     initDropdowns();
     initEyes();

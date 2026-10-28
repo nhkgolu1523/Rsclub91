@@ -1,0 +1,26 @@
+# ============================================================
+#  RSClub91 INVITATION SYSTEM  (Cloudflare Worker)
+# ------------------------------------------------------------
+#  Ye worker invitation ka saara SERVER-side kaam karta hai:
+#    * register par inviter link karna (?ref=)
+#    * deposit par commission + first-deposit bonus + task progress
+#    * bet par team-betting (rebate tier) update
+#    * subordinate / commission / bonus-tasks / bonus-record  (GET)
+#    * daily 01:00 IST par commission calculate karke wallet me credit (cron)
+#    * manual (admin) reward dene ka endpoint
+#
+#  NOTE: name alag hai "rsclub-invite" - baaki workers
+#        (wingo-results, 99infinity, www) ko touch nahi karega.
+# ============================================================
+
+name = "rsclub-invite"
+main = "src/index.js"
+compatibility_date = "2026-10-25"
+
+# 19:30 UTC = 01:00 IST (IST = UTC + 5:30) -> daily commission calc
+[triggers]
+crons = ["30 19 * * *"]
+
+[vars]
+FB_BASE = "https://rsclub91-62526-default-rtdb.firebaseio.com"
+ADMIN_KEY = "change-me-rsclub-invite-admin"

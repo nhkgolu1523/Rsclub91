@@ -513,10 +513,46 @@
       option.addEventListener('click', function () {
         labelEl.textContent = value;
         syncTabWithOption(value);
+        /* game-history page listeners (e.g. game-history.js) ko batao */
+        try {
+          if (page === 'game-history' && title === 'Select game') {
+            document.dispatchEvent(new CustomEvent('rs:game-change', { detail: { game: value } }));
+          } else {
+            document.dispatchEvent(new CustomEvent('rs:filter-change', { detail: { value: value, title: title } }));
+          }
+        } catch (e) {}
         closeSheet();
       });
       list.appendChild(option);
     });
+  }
+
+  /* YYYY-MM-DD local (UTC shift se bachne ke liye manual) */
+  function ymd(d) {
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  }
+
+  /* "Today/Yesterday/Last 7 days/Custom date/All dates" -> {from,to} range */
+  function dateRangeFor(period, custom) {
+    var now = new Date();
+    var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    function addDays(base, n) { var d = new Date(base.getTime()); d.setDate(d.getDate() + n); return d; }
+    if (period === 'All dates') return { from: '', to: '' };
+    if (period === 'Today') return { from: ymd(today), to: ymd(today) };
+    if (period === 'Yesterday') { var y = addDays(today, -1); return { from: ymd(y), to: ymd(y) }; }
+    if (period === 'Last 7 days') return { from: ymd(addDays(today, -6)), to: ymd(today) };
+    if (period === 'Custom' && custom) return { from: custom, to: custom };
+    return { from: '', to: '' };
+  }
+
+  function dispatchDateChange(period, custom) {
+    try {
+      var r = dateRangeFor(period, custom);
+      document.dispatchEvent(new CustomEvent('rs:date-change', {
+        detail: { period: period, date: custom || '', from: r.from, to: r.to }
+      }));
+    } catch (e) {}
   }
 
   function openDateSheet(selector, labelEl) {
@@ -533,6 +569,7 @@
       option.textContent = value;
       option.addEventListener('click', function () {
         labelEl.textContent = value === 'All dates' ? 'Choose a date' : value;
+        dispatchDateChange(value, null);
         closeSheet();
       });
       list.appendChild(option);
@@ -569,6 +606,7 @@
         month: 'short',
         year: 'numeric'
       });
+      dispatchDateChange('Custom', input.value);
       closeSheet();
     });
 

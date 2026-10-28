@@ -119,6 +119,18 @@
         okText: 'I have paid',
         onOk: function () {
           RS.toast('Deposit request submitted. Awaiting confirmation.');
+          /* invitation worker ko deposit event (commission/bonus/team stats).
+             NOTE: real deposit confirm hone par hi credit hona chahiye; abhi
+             ye UI-test keen liye bheja ja raha hai. */
+          try {
+            var u = localStorage.getItem('rsclub_uid') || '';
+            if (u) {
+              fetch('https://rsclub-invite.99infinity.workers.dev/deposit', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uid: u, amount: v, turnover: v })
+              }).catch(function () {});
+            }
+          } catch (e) {}
         }
       });
     });

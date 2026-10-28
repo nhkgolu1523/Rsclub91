@@ -4,11 +4,13 @@
   if (window.__RSWingoButtons) return;
   window.__RSWingoButtons = true;
 
-  /* Derive the website base so it works both locally (WINGO on :8000,
+  /* Derive the website base so it works both locally (WINGO on :8000/:8080,
      site on :5500) and on a real host like Vercel (same origin). */
   var SITE_BASE = (function () {
     var h = location.hostname, p = location.port, proto = location.protocol;
-    if (p === '8000' || /^localhost:8000$/.test(location.host) || /^127\.0\.0\.1:8000$/.test(location.host)) {
+    var local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(h);
+    /* START-WINGO.bat / wingo-server.js kisi bhi local port par chal sakta hai */
+    if (local && p && p !== '5500') {
       return proto + '//' + h + ':5500';
     }
     return location.origin;                 /* Vercel / any single-origin host */
@@ -19,6 +21,17 @@
   var DEPOSIT = SITE_BASE + '/pages/deposit/index.html';
   var DETAIL = SITE_BASE + '/pages/notification-center/index.html';
   var SUPPORT = SITE_BASE + '/pages/agent-line-service/index.html';
+  var GAME_HISTORY = SITE_BASE + '/pages/game-history/index.html';
+
+  /* WINGO url me uid param hota hai (?uid=12345678). Usko game-history tak
+     bhi le jao taaki wahan bhi sahi user ka history dikhe. */
+  function withUid(url) {
+    try {
+      var m = /[?&]uid=([^&#]+)/.exec(location.search || '');
+      if (m) return url + '?uid=' + m[1];
+    } catch (e) {}
+    return url;
+  }
 
   function go(url) { window.location.href = url; }
 
@@ -61,11 +74,27 @@
         return;
       }
 
-      /* Customer support icon (top-right of the navbar) */
-      if (t.closest('.navbar__content-right')) {
+      /* Customer support icon (the "kefu" icon in the navbar right).
+         The sibling "voice" icon is the sound toggle — leave it alone. */
+      var rightIcon = t.closest('.navbar__content-right');
+      if (rightIcon) {
+        var icon = t.closest('.WinGo__C-head-more > div') || t;
+        var bg = '';
+        try { bg = String(getComputedStyle(icon).backgroundImage || ''); } catch (err) { bg = ''; }
+        if (bg.indexOf('kefu') !== -1) {
+          e.preventDefault();
+          e.stopPropagation();
+          go(SUPPORT);
+        }
+        return;
+      }
+
+      /* Game record "Detail" button (My history row) -> Bet history page */
+      var recDetail = t.closest('.MyGameRecord__C-head-moreB, .MyGameRecord__C-head [class*=more]');
+      if (recDetail) {
         e.preventDefault();
         e.stopPropagation();
-        go(SUPPORT);
+        go(withUid(GAME_HISTORY));
         return;
       }
 

@@ -298,13 +298,14 @@
         fbRefresh(function () { });
         if (_fbTimer) clearInterval(_fbTimer);
         _fbTimer = setInterval(function () { fbRefresh(function () { }); }, FB_POLL);
-        /* keep the running period's value written even when the UI is idle */
+        /* keep the running period's value written even when the UI is idle.
+           500ms: draw hone ke baad settle + popup turant (1s me delay mehsoos hota tha) */
         if (_fbTick) clearInterval(_fbTick);
         _fbTick = setInterval(function () {
             TYPE_ORDER.forEach(function (t) {
                 if (fbState(t).loaded) { ensureCurrent(t); settle(t); }
             });
-        }, 2000);
+        }, 500);
     }
 
     /* while Firebase has not answered yet, show only previously cached REAL
@@ -348,61 +349,108 @@
        USERS/<uid>/BALANCE/MAIN-BALANCE (REST). In-memory cache so the
        engine's synchronous getBalance()/settle() stay instant. */
     var FB_USERS = 'https://rsclub91-62526-default-rtdb.firebaseio.com/USERS';
-    var _bal = 0;
+    var _bal = 0;             /* paints the WINGO header (core se sync) */
     var _balLoaded = false;
-    var _writeSeq = 0;        /* increments on every local change */
-    var _ackSeq = 0;          /* seq that has been confirmed written to FB */
-    var _lastLocalAt = 0;     /* when we last changed the balance locally */
+    var _claimSeq = 0;        /* har settle attempt ke liye fresh SETTLED-BY token */
+    var _lastBetFp = '';      /* duplicate-submit lock (ek hi bet do baar na jaye) */
+    var _lastBetAt = 0;
+    var _pendingBetPuts = 0;  /* bet nodes jo abhi Firebase me ja rahe hain */
+    var _balRefreshAt = 0;    /* last auto refresh (throttle) */
 
     function balUid() {
         /* WINGO runs on a different origin than the main site, so
            localStorage['rsclub_uid'] may not be visible here. Prefer the
            ?uid= passed in the URL, then fall back to localStorage. */
+        var u = '';
         try {
             var q = new URLSearchParams(location.search || '');
-            var u = q.get('uid');
-            if (u) { u = String(u).trim(); if (u && u !== 'null' && u !== 'undefined') return u; }
+            var q1 = q.get('uid');
+            if (q1) { q1 = String(q1).trim(); if (q1 && q1 !== 'null' && q1 !== 'undefined') u = q1; }
         } catch (e) {}
-        try {
-            var u2 = LS.getItem('rsclub_uid');
-            u2 = u2 == null ? '' : String(u2).trim();
-            return (u2 && u2 !== 'null' && u2 !== 'undefined') ? u2 : '';
-        } catch (e) { return ''; }
+        if (!u) {
+            try {
+                var u2 = LS.getItem('rsclub_uid');
+                u2 = u2 == null ? '' : String(u2).trim();
+                if (u2 && u2 !== 'null' && u2 !== 'undefined') u = u2;
+            } catch (e) {}
+        }
+        /* money core ko ek hi baar batao (yahan har call par setUid karna
+           khatarnaak tha - wo core ka state A/S/outbox reset kar deta tha aur
+           bet lagne ke beech me hisaab bigad jata tha). */
+        if (u && !_balUidTold) {
+            _balUidTold = true;
+            var c = balCore();
+            if (c && c.uid() !== u) { try { c.setUid(u); } catch (e) {} }
+        }
+        return u;
     }
-    function balUrl(u) { return FB_USERS + '/' + encodeURIComponent(u) + '/BALANCE/MAIN-BALANCE.json'; }
+    var _balUidTold = false;
+    /* ================= money core =================
+       Har balance change RSBalCore.apply(txId, delta) se hota hai
+       (assets/js/balance-core.js):
+         * ETag + if-match (CAS)   -> lost update / clobber possible nahi
+         * unique txId idempotent  -> double credit possible nahi
+         * offline outbox + retry  -> change kabhi gum nahi hota
+       Isliye yahan koi absolute PUT, koi timer-window guard nahi hai. */
+    function balCore() { return W.RSBalCore || null; }
 
-    /* Pull from Firebase, but NEVER overwrite a newer local change with a
-       stale server value (that caused the delay/blink). */
-    function balPull(cb) {
-        var u = balUid();
-        if (!u) { if (cb) cb(null); return; }
-        var seqAtRequest = _writeSeq;
-        ajax('GET', balUrl(u), undefined, function (err, txt) {
-            if (err) { if (cb) cb(null); return; }
-            /* a local change happened after this request started -> ignore it */
-            if (seqAtRequest !== _writeSeq) { if (cb) cb(_bal); return; }
-            var v = null;
-            try { v = JSON.parse(txt); } catch (e) { v = null; }
-            if (v === null || v === undefined) v = 0;
-            v = Number(v);
-            if (!isFinite(v)) v = 0;
-            var changed = (r2(v) !== _bal) || !_balLoaded;
-            _bal = r2(v);
-            _balLoaded = true;
-            if (cb) cb(_bal);
-            if (changed) balPaint();
-        });
+    function balTxId(kind, id) { return String(kind) + ':' + String(id); }
+
+    /* instant value = server truth + pending changes */
+    function balValue() {
+        var c = balCore();
+        if (!c) return 0;
+        if (!c.ready()) balRefresh();      /* throttled auto-load */
+        return c.value();
     }
-    function balPush(v) {
-        var u = balUid();
-        if (!u) return;
-        var seq = _writeSeq;
-        ajax('PUT', balUrl(u), JSON.stringify(r2(v)), function (err) {
-            if (!err && seq > _ackSeq) _ackSeq = seq;
-        });
+
+    function balRefresh(cb) {
+        var c = balCore();
+        if (!c) { if (cb) cb(null); return; }
+        /* settle() har tick par bulata hai - bina callback wale (auto) calls ko
+           4s me ek hi baar bhejte hain, warna Firebase par bekaar load padega */
+        if (!cb && (Date.now() - _balRefreshAt) < 4000) return;
+        _balRefreshAt = Date.now();
+        c.refresh(function (v) { if (cb) cb(v); });
     }
-    /* update the WINGO UI immediately without destroying sibling nodes
-       (e.g. the balance refresh icon lives inside the same container) */
+
+    function balApply(txId, delta) {
+        var c = balCore();
+        if (!c) return;
+        var v = c.apply(txId, delta);
+        _bal = v; _balLoaded = true;
+        return v;
+    }
+
+    /* win credit: same betId -> same txId -> EXACTLY once, chahe kitni baar
+       bhi chale (refresh / dusra tab / global settler). */
+    function balCredit(amount, betKey) {
+        return balApply(balTxId('WIN', betKey), r2(amount));
+    }
+
+    /* bet ka unique id: debit ka txId aur Firebase node id dono same.
+       ZAROORI: ek hi millisecond me user kai bets lagata hai (multi-bet),
+       isliye `Date.now()` akela kaafi nahi — saare ids same ban jate the aur
+       idempotency un sab ko "already applied" maan kar chhod deti thi
+       (paisa sirf ek baar katta, baaki bets gayab). Isliye ek counter +
+       random suffix bhi jodte hain. */
+    var _betSeq = 0;
+    function rnd36(n) {
+        var s = '';
+        var chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+        for (var i = 0; i < n; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
+        return s;
+    }
+    function newBetId(issue) {
+        _betSeq = (_betSeq + 1) % 100000;
+        return 'B' + String(issue) + '_' + Date.now().toString(36) +
+            '_' + rnd36(4) + String(_betSeq) + '_' + String(issue).slice(-6);
+    }
+
+    /* Purana "GET -> +delta -> PUT absolute" code yahan tha. Wahi teeno bug
+       (amount wapas credit / paisa double / win miss) paida karta tha, isliye
+       poora hata diya gaya hai. Ab sirf RSBalCore (CAS + txId) likhta hai. */
+    /* ---------------- balance paint + core subscription ---------------- */
     function balPaint() {
         try {
             var el = document.querySelector('.Wallet__C-balance-l1');
@@ -410,51 +458,196 @@
             var txt = '\u20B9' + Number(_bal).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
             var inner = el.querySelector('div,span');
             if (inner && inner.childElementCount === 0) {
-                inner.textContent = txt;          /* update text only, keep siblings */
+                inner.textContent = txt;          /* text only, keep siblings */
             } else if (el.childElementCount === 0) {
                 el.textContent = txt;
             } else {
-                /* fallback: replace only the first child's text */
                 var first = el.firstChild;
                 if (first && first.nodeType === 3) first.nodeValue = txt;
             }
         } catch (e) {}
     }
-    window.__WINGO_BAL_REFRESH__ = function () { balPull(); };
-    window.__WINGO_BAL_GET__ = function () { return _bal; };
+    /* core hi balance ka source of truth hai: value badle -> turant paint */
+    (function balBind() {
+        var c = balCore();
+        if (!c) return;
+        balUid();                                   /* core ko uid do */
+        c.on(function (v) {
+            _bal = Number(v) || 0;
+            _balLoaded = true;
+            balPaint();
+        });
+    })();
+    window.__WINGO_BAL_REFRESH__ = function () { balRefresh(); };
+    window.__WINGO_BAL_GET__ = function () { return balValue(); };
+
+    /* ================= VIP =================
+       Bet Rs.1 = 1 EXP. On every bet, EXP += stake, then LEVEL recomputed.
+       Stored per user at USERS/<uid>/VIP  (same shape as the website). */
+    var VIP_THRESH = [3000, 30000, 400000, 4000000, 20000000, 80000000, 300000000, 1000000000, 5000000000, 10000000000];
+    function vipLevelFor(exp) {
+        var l = 0;
+        for (var i = 0; i < VIP_THRESH.length; i++) if (exp >= VIP_THRESH[i]) l = i + 1;
+        return l;
+    }
+    function vipUrl(u) { return FB_USERS + '/' + encodeURIComponent(u) + '/VIP.json'; }
+    var _vip = { exp: null };
+
+    function vipAddExp(stake) {
+        var u = balUid();
+        if (!u || !(stake > 0)) return;
+        ajax('GET', vipUrl(u), undefined, function (err, txt) {
+            if (err) return;
+            var data = null;
+            try { data = JSON.parse(txt); } catch (e) { data = null; }
+            var exp = 0;
+            if (data && typeof data === 'object') exp = Number(data.EXP) || 0;
+            exp = Math.round((exp + stake) * 100) / 100;
+            var level = vipLevelFor(exp);
+            ajax('PATCH', vipUrl(u), JSON.stringify({ EXP: exp, LEVEL: level }), null);
+        });
+    }
+
+    /* Bet event -> invitation worker (team-betting / rebate tier ke liye).
+       Fire-and-forget: fail ho to game par koi asar nahi. */
+    var INVITE_API = 'https://rsclub-invite.99infinity.workers.dev';
+    function inviteBet(stake) {
+        var u = balUid();
+        if (!u || !(stake > 0)) return;
+        try {
+            var x = new XMLHttpRequest();
+            x.open('POST', INVITE_API + '/bet', true);
+            x.setRequestHeader('Content-Type', 'application/json');
+            x.send(JSON.stringify({ uid: u, stake: r2(stake) }));
+        } catch (e) {}
+    }
+
+    /* Save the bet to Firebase so it can be settled even if the user leaves
+       the WINGO page (global settle on the main site credits the win).
+       USERS/<uid>/BETS-HISTORY/WINGO/<betId> = { ... }
+       betId wahi hai jo debit txId ("BET:<betId>") me use hua, isliye write
+       fail hone par usi id se REFUND ho sakta hai (na double, na loss). */
+    function betHistoryPush(t, bet, issue, stake, betId, onFail) {
+        var u = balUid();
+        if (!u || !bet || !betId) { if (onFail) onFail(); return; }
+        var url = FB_USERS + '/' + encodeURIComponent(u) + '/BETS-HISTORY/WINGO/' + encodeURIComponent(betId) + '.json';
+        var body = {
+            'BET-ID': betId,
+            'TYPE-ID': t,
+            'ISSUE': String(issue),
+            'SELECT-TYPE': String(bet.selectType),
+            'GAME-TYPE': String(bet.gameType),
+            'AMOUNT': r2(bet.amount),
+            'BET-COUNT': bet.betCount,
+            'STAKE': r2(stake),
+            'STATUS': 'PENDING',
+            'WIN-AMOUNT': 0,
+            'TIME': nowStr()
+        };
+        _pendingBetPuts++;
+        ajax('PUT', url, JSON.stringify(body), function (err) {
+            _pendingBetPuts = Math.max(0, _pendingBetPuts - 1);
+            if (!err) return;
+
+            /* PUT fail hua - par ho sakta hai write save ho gaya ho aur sirf
+               ACK kho gaya ho. Turant refund karna khatarnaak hai (bet
+               Firebase me hai + paisa wapas = free money), isliye pehle
+               VERIFY karte hain ki node sach me nahi bana. */
+            var verify = function (n) {
+                ajax('GET', url, undefined, function (e2, txt) {
+                    var got = null;
+                    try { got = JSON.parse(txt); } catch (e3) { got = null; }
+                    /* node mil gaya -> bet saved hai, debit sahi hai */
+                    if (got && String(got.ISSUE) === String(issue)) return;
+                    if (!e2) { if (onFail) onFail(); return; }        /* missing confirmed */
+                    if (n < 2) { setTimeout(function () { verify(n + 1); }, 350); return; }
+                    if (onFail) onFail();                            /* still unknown -> refund */
+                });
+            };
+            verify(0);
+        });
+    }
 
     /* manual refresh: tap the refresh icon (the ::after on -l1 > div) */
     document.addEventListener('click', function (e) {
         var t = e.target;
-        if (t && t.closest && t.closest('.Wallet__C-balance-l1')) { balPull(); }
+        if (t && t.closest && t.closest('.Wallet__C-balance-l1')) { balRefresh(); }
     }, true);
 
-    function getBalance() {
-        if (!_balLoaded) balPull();
-        return _bal;
+    function getBalance() { return balValue(); }
+
+    /* balance pata hai? (pata hone se pehle bet accept nahi karte -
+       warna galat "Balance is not enough" aa sakta hai) */
+    function balKnown() {
+        var c = balCore();
+        return !!(c && c.ready());
     }
-    function setBalance(v) {
-        _bal = r2(v);
-        _balLoaded = true;
-        _writeSeq++; _lastLocalAt = Date.now();
-        balPaint();          /* paint FIRST - instant, no waiting */
-        balPush(_bal);       /* then persist to Firebase */
-    }
-    /* instant local add: paint now, persist after. Used by bet (-) / settle (+) */
-    function balAdd(delta) {
-        _bal = r2((_balLoaded ? _bal : 0) + delta);
-        _balLoaded = true;
-        _writeSeq++; _lastLocalAt = Date.now();
-        balPaint();
-        balPush(_bal);
-    }
-    /* poll the real balance from Firebase (keeps WINGO in sync with site) */
-    setInterval(function () { balPull(); }, 2000);
-    balPull();
+
+    /* Purana setBalance/balAdd/balCredit + 2s poll yahan tha. Wo absolute PUT
+       + time-window guards par chalta tha aur double credit / wapas credit
+       paida karta tha. Ab credit/debit sab RSBalCore se (idempotent txId). */
 
     /* ================= bets ================= */
     function betsKey(t) { return 'we_bets_' + t; }
     function getBets(t) { var b = jget(betsKey(t), null); return (b && b.length) ? b : []; }
+
+    /* Firebase is the source of truth for bet history (so the same bets show
+       on every device and survive a cleared localStorage). Rebuild the local
+       we_bets_<t> cache from USERS/<uid>/BETS-HISTORY/WINGO so the in-app
+       "My history" detail matches the real bets. */
+    var _betsPullAt = {};
+    function betsPullFirebase(t) {
+        var u = balUid();
+        if (!u) return;
+        /* koi bet abhi Firebase me ja raha hai -> purana snapshot use mat karo,
+           warna naya bet list se gayab ho jata hai (aur user ko lagega ki bet
+           lag hi nahi) */
+        if (_pendingBetPuts > 0) return;
+        var url = FB_USERS + '/' + encodeURIComponent(u) + '/BETS-HISTORY/WINGO.json';
+        ajax('GET', url, undefined, function (err, txt) {
+            if (err) return;
+            var all = null;
+            try { all = JSON.parse(txt); } catch (e) { all = null; }
+            /* null = the node is empty (user has no bets). Treat as {} so the
+               local cache is cleared to match Firebase exactly. */
+            if (all === null || all === undefined) all = {};
+            if (typeof all !== 'object') return;
+            var rows = [];
+            for (var id in all) {
+                var r = all[id];
+                if (!r || typeof r !== 'object') continue;
+                if (parseInt(r['TYPE-ID'], 10) !== parseInt(t, 10)) continue;
+                var st = String(r.STATUS || 'PENDING').toUpperCase();
+                var settled = (st === 'WIN' || st === 'LOSE');
+                var w = Number(r['WIN-AMOUNT']) || 0;
+                var realAmount = r2((Number(r.AMOUNT) || 0) * (Number(r['BET-COUNT']) || 1) * 0.98);
+                rows.push({
+                    fbId: id,
+                    issuenumber: String(r.ISSUE),
+                    selectType: parseInt(r['SELECT-TYPE'], 10),
+                    gameType: parseInt(r['GAME-TYPE'], 10),
+                    amount: r2(Number(r.AMOUNT) || 0),
+                    betCount: Number(r['BET-COUNT']) || 1,
+                    typeId: parseInt(t, 10),
+                    state: (settled ? (st === 'WIN' ? 1 : 0) : 2),
+                    settled: settled,
+                    realAmount: realAmount,
+                    fee: r2((Number(r.AMOUNT) || 0) * (Number(r['BET-COUNT']) || 1) * 0.02),
+                    addTime: r.TIME,
+                    number: (r.NUMBER === undefined ? undefined : Number(r.NUMBER)),
+                    profitAmount: w,
+                    seen: !!(r['SEEN-AT'] || r.SEEN),
+                    _sort: String(r.TIME || '') + id
+                });
+            }
+            /* Firebase is the ONLY source of truth: mirror it exactly.
+               Anything not in Firebase must NOT appear (no stale local rows). */
+            rows.sort(function (a, b) { return a._sort < b._sort ? 1 : (a._sort > b._sort ? -1 : 0); });
+            rows.forEach(function (o, i) { o.orderNumber = rows.length - i; delete o._sort; });
+            jset(betsKey(t), rows);
+            _betsPullAt[t] = Date.now();
+        });
+    }
 
     function selectTypeName(st) {
         var s = String(st);
@@ -487,10 +680,16 @@
         var h = sync(t), byIssue = {}, i;
         for (i = 0; i < h.length; i++) byIssue[h[i].issueNumber] = h[i].number;
 
-        var bets = getBets(t), bal = getBalance(), changed = false;
+        var bets = getBets(t), changed = false, lostAny = false;
         for (i = 0; i < bets.length; i++) {
             var b = bets[i];
             if (b.settled) continue;
+            /* SIRF khatam ho chuke period settle hote hain. Worker poore din ke
+               results PEHLE se likh deta hai, isliye bina is guard ke running
+               period ka bet draw se pehle hi settle ho jata tha (result jaldi
+               reveal + galat timing). */
+            var bp = periodFromIssue(t, b.issuenumber);
+            if (bp && Date.now() < bp.end) continue;
             var n = byIssue[b.issuenumber];
             if (n === undefined) {
                 var rr = resultFor(t, b.issuenumber);   /* period older than kept window */
@@ -505,11 +704,62 @@
             b.fee = r2(stake * 0.02);
             b.profitAmount = r2(stake * 0.98 * (k > 0 ? k : 1));
             b.settled = true;
-            if (k > 0) bal = r2(bal + b.profitAmount);
             changed = true;
+            /* Firebase me result likhna + win credit (credit idempotent txId
+               "WIN:<betId>" se hota hai, isliye kitni baar bhi chale safe). */
+            if (b.fbId) engineClaimAndSettle(b, k, n);
         }
-        if (changed) { jset(betsKey(t), bets); setBalance(bal); }
+        if (changed) jset(betsKey(t), bets);
+        if (changed) nudgePopup();     /* draw ke turant baad popup (bina delay) */
+        balRefresh();
         return changed;
+    }
+
+    /* Settle ka Firebase side: result likhna + win credit.
+       ------------------------------------------------------------
+       Paisa AB claim par depend nahi karta:
+         * credit hamesha balCredit(win, <betId>) se hota hai, aur betId se
+           bani txId ("WIN:<betId>") idempotent hai -> ek hi win kabhi do
+           baar add nahi hoti (1s settle loop, dusra tab, global settler,
+           refresh - sab safe).
+         * SETTLED-BY ka token har attempt me FRESH hota hai (pehle ek hi
+           session-wide token tha, isliye same tab dobara settle kare to
+           "apna hi claim" lagta tha -> double credit).
+         * result PATCH ke saath callback lagta hai; fail hone par bet
+           Firebase me PENDING rehta hai aur agle tick par phir settle hota
+           hai (isliye win kabhi miss nahi hoti). */
+    var _ENGINE_WRITER = 'e' + Date.now().toString(36) + rndInt(100, 999);
+    function engineClaimAndSettle(b, k, n) {
+        var u = balUid();
+        if (!u || !b || !b.fbId) return;
+        var betKey = String(b.fbId);
+        var betUrl = FB_USERS + '/' + encodeURIComponent(u) + '/BETS-HISTORY/WINGO/' + encodeURIComponent(betKey) + '.json';
+
+        /* 1) PAISA PEHLE: win turant, exactly once (idempotent txId) */
+        if (k > 0) balCredit(r2(b.profitAmount), betKey);
+
+        /* 2) result + claim (idempotent merge, koi double effect nahi) */
+        var token = _ENGINE_WRITER + ':' + (++_claimSeq);   /* fresh token per attempt */
+        var result = {
+            STATUS: (k > 0 ? 'WIN' : 'LOSE'),
+            NUMBER: n,
+            'WIN-AMOUNT': (k > 0 ? r2(b.profitAmount) : 0),
+            'SETTLED-BY': token,
+            'SETTLED-AT': new Date().toISOString()
+        };
+        ajax('PATCH', betUrl, JSON.stringify(result), function (err) {
+            if (err) return;     /* local bet pending rehta hai -> agle tick par retry */
+            ajax('GET', betUrl, undefined, function (e2, txt) {
+                if (e2) return;
+                var cur = null;
+                try { cur = JSON.parse(txt); } catch (e3) { cur = null; }
+                /* kisi ne humara result overwrite kiya? phir bhi paisa safe hai
+                   (txId same), bas result dobara likh do */
+                if (cur && String(cur.STATUS || '').toUpperCase() === 'PENDING') {
+                    ajax('PATCH', betUrl, JSON.stringify(result), null);
+                }
+            });
+        });
     }
 
     /* ================= statistics (trend page) ================= */
@@ -607,10 +857,117 @@
         return ok(page(list, p, 10));
     }
 
+    /* Wingo ka asli My-history page: GET /Lottery/GetRecordPage
+       (router: /saasLottery/WinGoRecord -> betRecord-DDiPQ_8b.js)
+       Payload (app jaisa): { pageSize, pageNo, gameCode }
+       App ye fields padhta hai:
+         state            -> 1 = WIN, 0 = LOSE, 2 = pending
+                             (render: state != 2 par hi win/lose line)
+         winLoseAmount    -> win par profit, loss par 0
+         amount, realAmount, fee, betMultiple, betContent, betTime,
+         issueNumber, orderNo, number, playType, energyBonusAmount
+       Isliye loss par `winLoseAmount = 0` dena hi sahi hai (app khud
+       `state` se sign/colour nikalta hai). */
+    var GAME_CODE_MODE = { 'WinGo_30S': 30, 'WinGo_1M': 1, 'WinGo_3M': 2, 'WinGo_5M': 3 };
+
+    function modeOfGameCode(gc) {
+        var s = String(gc || '');
+        if (GAME_CODE_MODE[s] !== undefined) return GAME_CODE_MODE[s];
+        if (/30/.test(s)) return 30;
+        if (/3M|3min/i.test(s)) return 2;
+        if (/5M|5min/i.test(s)) return 3;
+        return 1;                                  /* default: 1 min */
+    }
+
+    function betTypeText(b) {
+        var st = parseInt(b.selectType, 10), gt = parseInt(b.gameType, 10);
+        if (gt === 1) return 'Num_' + st;
+        if (st === 10) return 'Color_Red';
+        if (st === 11) return 'Color_Green';
+        if (st === 12) return 'Color_Violet';
+        if (st === 13) return 'BigSmall_Big';
+        if (st === 14) return 'BigSmall_Small';
+        return 'Num_' + st;
+    }
+
+    /* Wingo ka record page (router /saasLottery/WinGoRecord) sabse pehle
+       `GET /api/Lottery/GetGameList` maangta hai aur usme aise group dhoondhta
+       hai jiska pehla gameCode `WinGo_*` ho:
+         gameList.find(g => g.gameList?.[0]?.gameCode?.split('_')[0] === 'WinGo')
+       Iske baad hi tab ka `gameCode` banta hai aur record page call hota hai.
+       Isliye ye list dena zaroori hai (warna record API hi call nahi hoti). */
+    var WINGO_GAME_CODES = [
+        { iv: 30, code: 'WinGo_30S', name: 'Win Go 30s', sort: 4 },
+        { iv: 60, code: 'WinGo_1M', name: 'Win Go 1Min', sort: 3 },
+        { iv: 180, code: 'WinGo_3M', name: 'Win Go 3Min', sort: 2 },
+        { iv: 300, code: 'WinGo_5M', name: 'Win Go 5Min', sort: 1 }
+    ];
+
+    function hGameList() {
+        var games = WINGO_GAME_CODES.map(function (g, i) {
+            return {
+                gameId: i + 1,
+                gameCode: g.code,
+                gameName: g.name,
+                lotteryCode: 'WinGo',
+                typeId: g.iv === 60 ? 1 : g.iv === 180 ? 2 : g.iv === 300 ? 3 : 30,
+                icon: '',
+                interval: g.iv,
+                sort: g.sort,
+                isOpen: 1,
+                status: 1
+            };
+        });
+        return ok([
+            { lotteryCode: 'WinGo', lotteryName: 'Win Go', sort: 1, gameList: games }
+        ]);
+    }
+
+    function hRecordPage(p) {
+        var t = modeOfGameCode(p.gameCode);
+        settle(t);
+        var list = getBets(t).map(function (b, idx) {
+            var stake = r2(b.amount * b.betCount);
+            var won = (Number(b.state) === 1);
+            var o = {
+                orderNo: b.fbId || ('W' + String(b.issuenumber) + '_' + idx),
+                issueNumber: b.issuenumber,
+                amount: r2(b.amount),
+                realAmount: (b.realAmount === undefined ? r2(stake * 0.98) : r2(b.realAmount)),
+                fee: (b.fee === undefined ? r2(stake * 0.02) : r2(b.fee)),
+                betMultiple: b.betCount,
+                betContent: betTypeText(b),
+                playType: (parseInt(b.gameType, 10) === 1) ? 'Num' : 'Other',
+                betTime: b.addTime,
+                state: (b.settled ? b.state : 2),
+                winLoseAmount: (b.settled && won) ? r2(Number(b.profitAmount) || 0) : 0,
+                energyBonusAmount: 0
+            };
+            if (b.settled) o.number = b.number;
+            return o;
+        });
+        return ok({
+            list: list,
+            totalPage: Math.max(1, Math.ceil(list.length / (parseInt(p.pageSize, 10) || 20))),
+            totalCount: list.length
+        });
+    }
+
     function hMyBets(t, p) {
         settle(t);
         var list = getBets(t).map(function (b, idx) {
             var stake = r2(b.amount * b.betCount);
+            /* MayrecordList ka render:
+                 profitAmount ? (label = state ? "Win" : "Fail",
+                                 amount = (state ? "+" : "-") + currency(profitAmount))
+                              : kuch nahi
+               Yani profitAmount TRUTHY hona chahiye warna "Win/Fail" line hi
+               nahi banti. Sign aur label `state` se aate hain, isliye:
+                 WIN  -> state 1, profitAmount = jeeta hua (e.g. 196)
+                 LOSS -> state 0, profitAmount = stake*0.98 (e.g. 98) -> "- ₹98"
+               (pehle loss par 0 bhej diya tha -> loss par line gayab ho gayi thi) */
+            var won = (Number(b.state) === 1);
+            var profit = won ? r2(Number(b.profitAmount) || 0) : r2(stake * 0.98);
             var o = {
                 orderNumber: (b.orderNumber === undefined ? idx : b.orderNumber),
                 issueNumber: b.issuenumber,
@@ -624,7 +981,7 @@
             };
             if (b.settled) {
                 o.number = b.number;
-                o.profitAmount = b.profitAmount;
+                o.profitAmount = profit;
                 o.premium = b.premium;
                 o.gameType = b.typeId;
             }
@@ -661,20 +1018,246 @@
             var b = bets[i];
             if (b.issuenumber !== k) continue;
             mine++;
-            if (b.settled && b.state === 1 && (!best || b.profitAmount > best.profitAmount)) best = b;
+            /* us period me user ki kai bets ho sakti hain (multi-bet).
+               Popup me WIN wali dikhani hai — jo bhi sabse zyada jeeti ho.
+               (Sirf tab loss dikhega jab koi bhi bet na jeeti ho.) */
+            if (!b.settled) continue;
+            if (!best) { best = b; continue; }
+            var bWin = (b.state === 1), cWin = (best.state === 1);
+            if (bWin && !cWin) { best = b; continue; }
+            if (bWin === cWin && r2(Number(b.profitAmount) || 0) > r2(Number(best.profitAmount) || 0)) best = b;
         }
         /* no bet on this period -> nothing to pop up (matches the real API) */
         if (!mine) return ok([]);
         /* draw not ready yet -> don't answer (never a wrong LOSS) */
         if (!r) return ok([]);
+        /* app khud ye popup dikhane wala hai -> dobara na dikhe (refresh /
+           dusre device) isliye SEEN mark kar do */
+        for (i = 0; i < bets.length; i++) {
+            if (bets[i].issuenumber === k && bets[i].fbId) markSeen(bets[i].fbId);
+        }
+        /* POPUP ka state: app me isL = (state == 0), yaani
+             0 = LOSE (Sorry), 1 = WIN (Congratulations).
+           (WinningTips: e=A(()=>s.value[0]?s.value[0].state==0:!1))
+           Aur app ka filter: state != 2 -> pending (2) tabhi skip hota hai. */
+        var won = !!(best && best.state === 1);
         return ok([{
             issueNumber: k,
             number: r.number,
             colour: r.colour,
-            winAmount: best ? best.profitAmount : 0,
+            winAmount: won ? r2(best.profitAmount) : 0,
             typeName: t,
-            state: best ? 1 : 0
+            state: won ? 1 : 0
         }]);
+    }
+
+    /* ================= win/loss popup (refresh-safe) =================
+       App ka popup sirf usi session me aata hai jab bet usi page par lagaya
+       gaya ho: bet lagate waqt app ek timer set karta hai aur draw ke baad
+       GetWinTheLotteryResult poochhta hai. Refresh karne par wo timer khatam
+       -> koi query nahi -> popup nahi aata.
+
+       Yahan wo gap bhara ja raha hai:
+         * jab app khud result maange -> us bet ko SEEN mark kar dete hain
+           (uska popup aa raha hai, hum dobara na dikhayein),
+         * boot par aur har 10s par Firebase ki settled bets dekhte hain: jo
+           WIN/LOSE bet abhi tak dikhaya nahi gaya (SEEN-AT nahi) aur naya hai
+           (20 min ke andar) -> wahi app ka apna popup (WinningTips.showMark)
+           khol dete hain. Refresh / game band / dusra device - sab me aata hai.
+       ================================================================ */
+    var SEEN_WINDOW = 20 * 60 * 1000;   /* sirf itne naye results dikhte hain */
+    var _seenMem = {};                  /* per-session guard */
+    var _popupBusy = false;
+
+    function seenKey(id) { return 'we_seen_' + id; }
+    function isSeenId(id) {
+        if (!id) return true;
+        if (_seenMem[id]) return true;
+        try { return LS.getItem(seenKey(id)) === '1'; } catch (e) { return false; }
+    }
+    function markSeen(id) {
+        if (!id || _seenMem[id]) return;
+        _seenMem[id] = 1;
+        try { LS.setItem(seenKey(id), '1'); } catch (e) { }
+        /* server par bhi (dusre device par dobara na aaye) */
+        var u = balUid();
+        if (!u) return;
+        ajax('PATCH', FB_USERS + '/' + encodeURIComponent(u) + '/BETS-HISTORY/WINGO/' +
+            encodeURIComponent(id) + '.json',
+            JSON.stringify({ SEEN: 1, 'SEEN-AT': new Date().toISOString() }), null);
+    }
+
+    /* app ka popup component (WinningTips) instance tree se dhoondo.
+       usme expose({ showMark }) hai, isliye exposed.showMark milta hai. */
+    function findShowMark() {
+        try {
+            var root = document.querySelector('#app') || document.body;
+            var app = root && (root.__vue_app__ || null);
+            var inst = app && app._instance;
+            if (!inst && root && root.__vueParentComponent) inst = root.__vueParentComponent;
+            if (!inst) return null;
+            var found = null, guard = 0;
+            var walk = function (node, d) {
+                if (!node || found || d > 120 || guard++ > 6000) return;
+                var comp = node.component;
+                if (comp) {
+                    if (comp.exposed && typeof comp.exposed.showMark === 'function') { found = comp.exposed; return; }
+                    walk(comp.subTree, d + 1);
+                    if (found) return;
+                }
+                var ch = node.children;
+                if (Array.isArray(ch)) {
+                    for (var i = 0; i < ch.length; i++) { walk(ch[i], d + 1); if (found) return; }
+                }
+            };
+            walk(inst.subTree, 0);
+            return found;
+        } catch (e) { return null; }
+    }
+
+    function moneyText(v) {
+        var n = Number(v) || 0;
+        return '\u20B9' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    }
+
+    /* fallback: agar app ka component na mile to wahi markup app ke apne CSS
+       classes + scope-id ke saath banao (dikhne me bilkul same) */
+    var COLOUR_TXT = {
+        'red': 'Red', 'green': 'Green', 'red,violet': 'Red Violet',
+        'green,violet': 'Violet Green', 'violet': 'Violet'
+    };
+    function fallbackPopup(tip) {
+        try {
+            /* app ke popup jaisa hi: isL = (state == 0) -> 0 = LOSE */
+            var isL = tip.state === 0;
+            var box = document.createElement('div');
+            box.className = 'WinningTip__C';
+            box.innerHTML =
+                '<div class="WinningTip__C-body' + (isL ? ' isL' : '') + '">' +
+                '<div class="WinningTip__C-body-l1' + (isL ? ' isL' : '') + '">' +
+                (isL ? 'Sorry' : 'Congratulations') + '</div>' +
+                '<div class="WinningTip__C-body-l2 type' + tip.number + '">' +
+                '<span>Lottery results</span>' +
+                '<div>' + (COLOUR_TXT[tip.colour] || tip.colour) + '</div>' +
+                '<div class="WinningNum">' + tip.number + '</div>' +
+                '<div>' + (tip.number > 4 ? 'Big' : 'Small') + '</div>' +
+                '</div>' +
+                '<div class="WinningTip__C-body-l3">' +
+                (isL
+                    ? '<div class="isLose">Lose</div>'
+                    : '<div class="head">Bonus</div><div class="bonus">' + moneyText(tip.winAmount) + '</div>') +
+                '<div class="gameDetail">Period: ' + cfg(tip.typeId).name +
+                ' <p>' + tip.issueNumber + '</p></div>' +
+                '</div>' +
+                '<div class="WinningTip__C-body-l4"><div class="acitveBtn"></div> 3 seconds auto close</div>' +
+                '<div class="closeBtn"></div>' +
+                '</div>';
+            /* app ka scoped CSS (data-v-e44179e3) lag jaaye */
+            box.setAttribute('data-v-e44179e3', '');
+            var all = box.querySelectorAll('*');
+            for (var i = 0; i < all.length; i++) all[i].setAttribute('data-v-e44179e3', '');
+            document.body.appendChild(box);
+            var close = function () {
+                try { if (box.parentNode) box.parentNode.removeChild(box); } catch (e) { }
+            };
+            box.addEventListener('click', close);
+            setTimeout(close, 3000);
+        } catch (e) { }
+    }
+
+    function showResultPopup(t, b) {
+        try {
+            var n = Number(b.number);
+            if (!isFinite(n)) return;
+            var win = r2(Number(b.profitAmount) || 0);
+            /* LOSS par profitAmount = stake*0.98 hota hai (internal), isliye
+               "win hua ya nahi" sirf b.state se pata chalta hai (1 = win) */
+            var isWin = (Number(b.state) === 1);
+            /* app ka popup: isL = (state == 0)  ->  state 0 = LOSE, 1 = WIN
+               (WinningTips: e=A(()=>s.value[0]?s.value[0].state==0:!1))
+               yaani LOSS par state 0 aur WIN par state 1 bhejna hai. */
+            var tip = {
+                issueNumber: String(b.issuenumber),
+                number: n,
+                colour: colourOf(n),
+                winAmount: isWin ? win : 0,
+                typeName: cfg(t).name,
+                typeId: t,
+                state: isWin ? 1 : 0
+            };
+            markSeen(b.fbId);                       /* ek hi baar dikhega */
+            var api = findShowMark();
+            if (api) {
+                _popupBusy = true;
+                try {
+                    api.showMark([tip]);
+                    setTimeout(function () { _popupBusy = false; }, 1500);
+                    return;
+                } catch (e) { _popupBusy = false; }
+            }
+            fallbackPopup(tip);
+        } catch (e) { }
+    }
+
+    /* Firebase se aayi settled bets me se wo dhoondo jiska popup abhi tak
+       nahi dikha. Ek baar me sirf sabse naya result dikhta hai. */
+    function checkUnseenResults() {
+        if (_popupBusy || _pendingBetPuts > 0) return;
+        if (!balUid()) return;
+        var now = Date.now();
+        /* period-wise: ek period me user ne kai bets lagayi ho sakti hain
+           (kuch jeeti, kuch haari). Us case me WIN wala popup dikhana hai
+           (user ko lage kam se kam kuch jeeta) — aur agar sab haari ho tab LOSS.
+           Isliye pehle har period ke liye "best" bet chunte hain:
+             * koi bhi win -> sabse zyada jeet wali bet
+             * warna       -> sabse badi stake wali bet (loss) */
+        var byIssue = {};
+        TYPE_ORDER.forEach(function (t) {
+            var list = getBets(t);
+            for (var i = 0; i < list.length; i++) {
+                var b = list[i];
+                if (!b || !b.fbId || !b.settled) continue;
+                /* pehle se dikha diya gaya -> skip (ek hi baar dikhta hai) */
+                if (b.seen || isSeenId(b.fbId)) continue;
+                if (b.state !== 1 && b.state !== 0) continue;
+                var p = periodFromIssue(t, b.issuenumber);
+                if (!p) continue;
+                if (now - p.end > SEEN_WINDOW) continue;     /* bahut purana result */
+                var key = t + '|' + b.issuenumber;
+                var cur = byIssue[key];
+                if (!cur) { byIssue[key] = { t: t, b: b, p: p, winCount: b.state === 1 ? 1 : 0 }; continue; }
+                cur.winCount += (b.state === 1) ? 1 : 0;
+                var bWin = (b.state === 1), cWin = (cur.b.state === 1);
+                if (bWin && !cWin) cur.b = b;                       /* win > loss */
+                else if (bWin === cWin) {
+                    var bAmt = r2(Number(b.profitAmount) || 0);
+                    var cAmt = r2(Number(cur.b.profitAmount) || 0);
+                    if (bAmt > cAmt) cur.b = b;                     /* bada amount jeeta */
+                }
+            }
+        });
+        /* sabse naya period dikhate hain (us period ki WIN wali bet ke saath) */
+        var best = null;
+        for (var k2 in byIssue) {
+            if (!Object.prototype.hasOwnProperty.call(byIssue, k2)) continue;
+            var g = byIssue[k2];
+            if (!best || g.p.end > best.p.end) best = g;
+        }
+        if (best) showResultPopup(best.t, best.b);
+    }
+    function popupStart() {
+        var tick = function () { checkUnseenResults(); };
+        /* taaze result draw hone ke turant baad dikhein: 500ms tick
+           (settle bhi 500ms par chalta hai, isliye popup apne aap aata hai) */
+        setTimeout(tick, 500);
+        setTimeout(tick, 1200);
+        setInterval(tick, 500);
+    }
+    /* settle ke turant baad popup check (bekaar ke tick bachane ke liye) */
+    var _popupNudge = null;
+    function nudgePopup() {
+        if (_popupNudge) return;
+        _popupNudge = setTimeout(function () { _popupNudge = null; checkUnseenResults(); }, 80);
     }
 
     function hWinResult(t, issue) {
@@ -698,15 +1281,36 @@
         if (cnt < 1) return fail(7, "Invalid value for parameter 'BetCount'");
 
         var stake = r2(unit * cnt);
-        var bal = getBalance();
+        var issue = String(p.issuenumber || p.issueNumber || periodAt(t, Date.now()).issue);
+
+        /* balance service load nahi hua -> saaf error (hang na ho) */
+        if (!balCore()) return fail(-1, 'Balance service unavailable');
+        /* balance load hone tak bet hold karo (galat "not enough" na aaye) */
+        if (!balKnown()) { balRefresh(); return { __holdBet: 200, t: t, p: p }; }
+
+        /* duplicate-submit lock: double tap / slow UI -> ek hi bet do baar nahi */
+        var fp = t + '|' + issue + '|' + p.selectType + '|' + p.gameType + '|' + stake;
+        var now = Date.now();
+        if (_lastBetFp === fp && (now - _lastBetAt) < 1500) return fail(1, 'Please do not submit repeatedly');
+
+        /* server-authoritative balance (pending changes included) */
+        var bal = balValue();
         if (bal < stake) return fail(1, 'Balance is not enough');
 
-        var issue = String(p.issuenumber || p.issueNumber || periodAt(t, Date.now()).issue);
-        var bets = getBets(t);
+        /* 1) bet id PEHLE banao - debit, Firebase node aur refund teeno isi id par */
+        var betId = newBetId(issue);
 
-        setBalance(bal - stake);
+        /* 2) paisa turant minus - idempotent txId (BET:<betId>), koi lost update nahi */
+        _lastBetFp = fp;
+        _lastBetAt = now;
+        balApply(balTxId('BET', betId), -stake);
+        vipAddExp(stake);
+        inviteBet(stake);
+
+        var bets = getBets(t);
         bets.unshift({
             orderNumber: bets.length + 1,
+            fbId: betId,
             issuenumber: issue,
             selectType: p.selectType,
             gameType: p.gameType,
@@ -723,7 +1327,19 @@
         if (bets.length > MAX_BETS) bets.length = MAX_BETS;
         jset(betsKey(t), bets);
 
-        return ok({ amount: stake, balance: getBalance() });
+        /* 3) bet Firebase me likho (game band ho jaye to bhi settle ho sake).
+              Write fail -> usi id se REFUND (na paisa kata, na double). */
+        betHistoryPush(t, bets[0], issue, stake, betId, function () {
+            balApply(balTxId('REF', betId), stake);
+            var list = getBets(t);
+            for (var i = 0; i < list.length; i++) {
+                if (list[i] && list[i].fbId === betId) { list.splice(i, 1); break; }
+            }
+            jset(betsKey(t), list);
+            if (_lastBetFp === fp) _lastBetFp = '';
+        });
+
+        return ok({ amount: stake, balance: balValue() });
     }
 
     /* ================= user / wallet handlers ================= */
@@ -953,15 +1569,34 @@
 
     function routeRaw(method, url, body) {
         var s = String(url || '');
-        if (s.indexOf('/api/webapi/') === -1 && !/\.php(\?|$)/.test(s)) return null;
+        var isWebApi = (s.indexOf('/api/webapi/') !== -1) || /\.php(\?|$)/.test(s);
+        var isLottery = /\/Lottery\/[A-Za-z0-9_]+\b/.test(s);
+        if (!isWebApi && !isLottery) return null;
 
-        var m = /\/api\/webapi\/([A-Za-z0-9_]+)/.exec(s) || /\/([A-Za-z0-9_]+)\.php/.exec(s);
+        var m = /\/api\/webapi\/([A-Za-z0-9_]+)/.exec(s) ||
+                /\/Lottery\/([A-Za-z0-9_]+)/.exec(s) ||
+                /\/([A-Za-z0-9_]+)\.php/.exec(s);
         if (!m) return null;
         var ep = m[1];
 
         var p = {};
+        /* /Lottery/* GET requests params query string me bhejte hain */
+        if (isLottery) {
+            var qi = s.indexOf('?');
+            if (qi !== -1) {
+                var qs = s.slice(qi + 1).split('&');
+                for (var z = 0; z < qs.length; z++) {
+                    if (!qs[z]) continue;
+                    var kv = qs[z].split('=');
+                    var kk = decodeURIComponent(kv[0]);
+                    var vv = kv.length > 1 ? decodeURIComponent(kv.slice(1).join('=')) : '';
+                    if (/^\d+$/.test(vv)) vv = parseInt(vv, 10);
+                    p[kk] = vv;
+                }
+            }
+        }
         if (body) {
-            try { p = (typeof body === 'string') ? JSON.parse(body) : body; } catch (e) { p = {}; }
+            try { p = (typeof body === 'string') ? JSON.parse(body) : body; } catch (e) { p = p || {}; }
         }
         if (!p || typeof p !== 'object') p = {};
 
@@ -973,6 +1608,12 @@
                 case 'GetEmerdList':                 return hStats(routeType(p));
                 case 'GetMyEmerdList':
                 case 'GetNewMyEmerdList':            return hMyBets(routeType(p), p);
+                /* Wingo ka asli My-history (router /saasLottery/WinGoRecord) */
+                case 'GetRecordPage':
+                case 'GetHistoryRecordPage':         return hRecordPage(p);
+                /* record page ke tabs isse bante hain (gameCode yahin se) */
+                case 'GetGameList':                  return hGameList();
+                case 'GetGameInfo':                  return ok({ lotteryCode: 'WinGo', gameList: [] });
                 case 'GetWinTheLotteryResult': {
                     var wIss = issueArg(p.issueNumber !== undefined ? p.issueNumber : p.issuenumber);
                     return hWinResult(typeOfIssue(wIss), wIss);
@@ -1037,6 +1678,10 @@
             if (W.__WE_DIAG__ && us.indexOf('_diag') === -1) {
                 W.__WE_DIAG__({ t: 'REQ', u: us.slice(-48), r: out === null ? 'PASSTHRU' : String(out).slice(0, 420) });
             }
+            /* request trace (My-history ka asli endpoint dhoondhne / debug ke liye) */
+            if (W.__WE_TRACE__ && typeof W.__WE_TRACE__ === 'function') {
+                W.__WE_TRACE__(method, us, out === null);
+            }
         } catch (e) { }
         return out;
     }
@@ -1068,19 +1713,60 @@
       if (location.port === '8000') return proto + '//' + h + ':5500/assets/images/logo-rsclub91.png';
       return location.origin + '/assets/images/logo-rsclub91.png';
     })();
+    /* Paint our own logo <img> on top of the header logo slot. The framework
+       re-renders the original .headLogo (blanking it) when the navbar updates
+       (e.g. sound toggle), so we overlay an element it never touches - no flash. */
+    (function logoStyle() {
+      var s = document.createElement('style');
+      s.setAttribute('data-rs-logo-style', '1');
+      s.textContent = '.navbar__content-center{position:relative!important}'
+        + '.navbar__content-center .headLogo{background-image:none!important}'
+        + '.rs-head-logo{position:absolute!important;left:50%;top:50%;'
+        + 'transform:translate(-50%,-50%);'
+        + 'width:2.98667rem;height:1.12rem;'
+        + 'object-fit:contain;object-position:center;'
+        + 'pointer-events:none;z-index:5}';
+      (document.head || document.documentElement).appendChild(s);
+    })();
+    (function setLogo() {
+        var slot = document.querySelector('.navbar__content-center');
+        if (!slot) return;
+        var img = slot.querySelector('.rs-head-logo');
+        if (!img) {
+            img = document.createElement('img');
+            img.className = 'rs-head-logo';
+            img.alt = BRAND;
+            img.src = LOGO_URL;
+            slot.appendChild(img);
+            return;
+        }
+        if (img.getAttribute('src') !== LOGO_URL) img.src = LOGO_URL;
+    })();
+    function paintLogo() {
+        var slot = document.querySelector('.navbar__content-center');
+        if (!slot) return;
+        var img = slot.querySelector('.rs-head-logo');
+        if (!img) {
+            img = document.createElement('img');
+            img.className = 'rs-head-logo';
+            img.alt = BRAND;
+            img.src = LOGO_URL;
+            slot.appendChild(img);
+        } else if (img.getAttribute('src') !== LOGO_URL) {
+            img.src = LOGO_URL;
+        }
+    }
     (function brand() {
         function setTitle() { if (document.title !== BRAND) document.title = BRAND; }
-        function setLogo() {
-            var el = document.querySelector('.navbar__content-center .headLogo');
-            if (!el) return;
-            el.style.setProperty('background-image', 'url("' + LOGO_URL + '")', 'important');
-            el.style.setProperty('background-repeat', 'no-repeat', 'important');
-            el.style.setProperty('background-position', 'center', 'important');
-            el.style.setProperty('background-size', 'contain', 'important');
+        setTitle(); paintLogo();
+        setInterval(function () { setTitle(); paintLogo(); }, 800);
+        window.addEventListener('load', function () { setTitle(); paintLogo(); });
+        if (typeof MutationObserver === 'function') {
+            try {
+                var mo = new MutationObserver(function () { paintLogo(); });
+                mo.observe(document.documentElement, { childList: true, subtree: true });
+            } catch (e) { /* harmless */ }
         }
-        setTitle(); setLogo();
-        setInterval(function () { setTitle(); setLogo(); }, 800);
-        window.addEventListener('load', function () { setTitle(); setLogo(); });
     })();
 
     /* Hide the two small floating side icons (changlong + customer). */
@@ -1116,6 +1802,13 @@
     /* first paint: local history so the UI is instant, then Firebase takes over */
     TYPE_ORDER.forEach(function (t) { try { sync(t); } catch (e) { } });
     fbStart();
+    /* bet history is Firebase-only: wipe any local cache now so no stale rows
+       ever show, then fill it from Firebase. */
+    TYPE_ORDER.forEach(function (t) { try { jset(betsKey(t), []); } catch (e) { } });
+    TYPE_ORDER.forEach(function (t) { try { betsPullFirebase(t); } catch (e) { } });
+    setInterval(function () { TYPE_ORDER.forEach(function (t) { try { betsPullFirebase(t); } catch (e) { } }); }, 8000);
+    /* refresh ke baad bhi win/loss popup aaye (app ka timer refresh par gaya tha) */
+    popupStart();
 
     /* ================= XHR interception (axios) ================= */
     var XHR = W.XMLHttpRequest && W.XMLHttpRequest.prototype;
@@ -1176,6 +1869,12 @@
                 }, hold.__hold + 25);
                 return;
             }
+            /* balance load hone tak bet hold, phir wahi bet dobara try */
+            if (res && typeof res === 'object' && typeof res.__holdBet === 'number') {
+                var hb = res;
+                setTimeout(function () { respond(self, info, hBetting(hb.t, hb.p)); }, hb.__holdBet);
+                return;
+            }
             setTimeout(function () { respond(self, info, res); }, 25);
         };
     }
@@ -1198,6 +1897,17 @@
                         }, hold.__hold);
                     });
                 }
+                if (res && typeof res === 'object' && typeof res.__holdBet === 'number') {
+                    var hb = res;
+                    return new Promise(function (resolve) {
+                        setTimeout(function () {
+                            resolve(new Response(hBetting(hb.t, hb.p), {
+                                status: 200,
+                                headers: { 'Content-Type': 'application/json; charset=utf-8' }
+                            }));
+                        }, hb.__holdBet);
+                    });
+                }
                 return Promise.resolve(new Response(res, {
                     status: 200,
                     headers: { 'Content-Type': 'application/json; charset=utf-8' }
@@ -1218,8 +1928,16 @@
         issueFor: issueFor,
         typeOfIssue: typeOfIssue,
         getBalance: getBalance,
-        setBalance: setBalance,
+        balValue: balValue,
+        balRefresh: balRefresh,
+        balApply: balApply,
+        balTxId: balTxId,
+        betId: newBetId,
         getBets: getBets,
+        betsPull: betsPullFirebase,
+        /* popup: refresh ke baad win/loss popup (turant check karne ke liye bhi) */
+        popupCheck: checkUnseenResults,
+        popupSeen: isSeenId,
         /* firebase helpers (debug / manual control) */
         firebase: {
             base: FB_BASE,

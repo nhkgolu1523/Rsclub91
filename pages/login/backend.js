@@ -67,14 +67,34 @@
     }).catch(function () {});
   }
 
+  /* BALANCE node: sirf 3 fields (asli balance + S + A).
+     DEPOSIT-HISTORY / WITHDRAWL-HISTORY ab alag nodes hain (USERS/<uid>/...).
+     NOTE: Firebase me khaali object `{}` likhne par wo key DELETE ho jati hai,
+     isliye A me ek placeholder tx daalte hain (warna A node banega hi nahi aur
+     pehla bet/win uske bina chala jayega). */
   function createBalanceNode(uid) {
+    var seed = {};
+    seed['INIT:' + uid] = 1;
     return fetch(endpoint(USERS + '/' + uid + '/BALANCE'), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        'DEPOSIT-HISTORY': '',
         'MAIN-BALANCE': 0,
-        'WITHDRAWL-HISTORY': ''
+        'S': 1,
+        'A': seed
+      })
+    }).catch(function () {});
+  }
+
+  function createVipNode(uid) {
+    return fetch(endpoint(USERS + '/' + uid + '/VIP'), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        'EXP': 0,
+        'LEVEL': 0,
+        'CLAIMED-LEVEL': 0,
+        'LAST-MONTHLY': ''
       })
     }).catch(function () {});
   }
@@ -199,6 +219,35 @@
     return code;
   }
 
+  /* INVITATION-RECORD ka default (khaali) shape - register par banta hai.
+     Har user ka apna pura invitation data isi ek node me rehta hai. */
+  function emptyInvitationRecord(code, inviterUid) {
+    var now = nowStamp();
+    var rec = {
+      'CODE': code || '',
+      'INVITE-CODE': code || '',
+      'LINK': '',
+      'INVITED-BY': inviterUid || '',
+      'INVITED-AT': inviterUid ? now : '',
+      'REFERRAL-DEADLINE': '',
+      'LEVEL': 'L0',
+      'DIRECT': { 'COUNT': 0, 'DEPOSIT-COUNT': 0, 'DEPOSIT-AMOUNT': 0, 'FIRST-DEPOSIT-COUNT': 0 },
+      'TEAM': { 'COUNT': 0, 'DEPOSIT-COUNT': 0, 'DEPOSIT-AMOUNT': 0, 'FIRST-DEPOSIT-COUNT': 0 },
+      'CREATED': now,
+      /* placeholder taaki Firebase khaali object delete na kare */
+      'INIT': { 'X': 1 }
+    };
+    return rec;
+  }
+
+  function createInvitationRecord(uid, code, inviterUid) {
+    return fetch(endpoint(USERS + '/' + uid + '/INVITATION-RECORD'), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(emptyInvitationRecord(code, inviterUid))
+    }).catch(function () {});
+  }
+
   function createInviteCode(uid) {
     function attempt(tries) {
       var code = genInviteCode();
@@ -219,6 +268,8 @@
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(code)
+            }).then(function () {
+              return createInvitationRecord(uid, code, '');
             }).then(function () { return code; }).catch(function () { return code; });
           });
         })
@@ -230,17 +281,30 @@
     return attempt(8);
   }
 
-  api.register = function (phone, password) {
+  api.register = function (phone, password, inviterCode) {
     phone = String(phone || '').trim();
     password = String(password == null ? '' : password);
-    return findUser('phone', phone).then(function (existing) {
-      if (existing) throw new Error('This phone number is already registered.');
-      return createUser({
-        'EMAIL': 'NONE',             // email add-later UI comes later
-        'INVITE-CODE': 'NONE',       // invite backend comes later
-        'PASSWORD': password,        // plain text for now
-        'PHONE-NUMBER': phone,
-        'STATUS': 'ON'               // always ON at registration
+    inviterCode = String(inviterCode || '').trim();
+    var inviterUid = '';
+    var lookupInviter = function () {
+      if (!inviterCode || inviterCode === 'NONE') return Promise.resolve('');
+      return fetch(DB_URL + '/INVITE-CODES/' + encodeURIComponent(inviterCode) + '.json', { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (v) { return v ? String(v) : ''; })
+        .catch(function () { return ''; });
+    };
+    return lookupInviter().then(function (found) {
+      inviterUid = found;
+    }).then(function () {
+      return findUser('phone', phone).then(function (existing) {
+        if (existing) throw new Error('This phone number is already registered.');
+        return createUser({
+          'EMAIL': 'NONE',             // email add-later UI comes later
+          'INVITE-CODE': 'NONE',       // createInviteCode() below sets the real one
+          'PASSWORD': password,        // plain text for now
+          'PHONE-NUMBER': phone,
+          'STATUS': 'ON'               // always ON at registration
+        });
       });
     }).then(function (uid) {
       // Auto-create the display name: MEMBER + first 4 digits of the UID.
@@ -257,12 +321,61 @@
       }).catch(function () {}).then(function () {
         return createInviteCode(uid);
       }).then(function () {
+        return linkInviter(uid, inviterUid, username, inviterCode);
+      }).then(function () {
         return createBalanceNode(uid);
+      }).then(function () {
+        return createVipNode(uid);
       }).then(function () {
         return createWelcomeNotification(uid);
       }).then(function () { return uid; });
     });
   };
+
+  /* Inviter mila to uska rishta 2 jagah likho:
+       1) naye user ke INVITATION-RECORD me  INVITED-BY + 7-day deadline
+       2) inviter ke INVITATION-RECORD/SUBORDINATES/<newUid> me entry  */
+  function linkInviter(newUid, inviterUid, username, inviterCode) {
+    if (!inviterUid || String(inviterUid) === String(newUid)) return Promise.resolve();
+    var now = new Date();
+    var dl = new Date(now.getTime() + 7 * 86400000);
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    function stamp(d) {
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' '
+        + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+    }
+    var inviterPatch = {
+      'INVITED-BY': String(inviterUid),
+      'INVITED-AT': stamp(now),
+      'REFERRAL-DEADLINE': stamp(dl)
+    };
+    var sub = {};
+    sub['LV'] = 1;
+    sub['JOINED'] = stamp(now);
+    sub['USERNAME'] = username || '';
+    sub['DEPOSIT-AMOUNT'] = 0;
+    sub['FIRST-DEPOSIT'] = 0;
+    sub['BONUS'] = '';
+
+    return Promise.all([
+      fetch(endpoint(USERS + '/' + newUid + '/INVITATION-RECORD'), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(inviterPatch)
+      }).catch(function () {}),
+      fetch(endpoint(USERS + '/' + inviterUid + '/INVITATION-RECORD/SUBORDINATES/' + newUid), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sub)
+      }).catch(function () {}),
+      /* server (worker) ko bhi batao - wahi authoritative link/level karta hai */
+      fetch('https://rsclub-invite.99infinity.workers.dev/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: String(newUid), refCode: String(inviterCode || '') })
+      }).catch(function () {})
+    ]);
+  }
 
   api.login = function (phone, password) {
     var needle = String(phone || '').trim();
@@ -395,6 +508,13 @@
   }
 
   /* ---- register handler ------------------------------------------------- */
+  function refCode() {
+    try {
+      var m = /[?&](?:ref|invitationCode|code)=([^&#]+)/.exec(location.search || '');
+      if (m) { var v = decodeURIComponent(m[1]).trim(); if (v && v !== 'null') return v; }
+    } catch (e) {}
+    try { return localStorage.getItem('rs_ref') || ''; } catch (e) { return ''; }
+  }
   function wireRegister(regView, loginView) {
     var btn = regView.querySelector('.register__container-button button:not(.login)');
     if (!btn) return;
@@ -413,7 +533,8 @@
       if (agreeBox && !isChecked(agreeBox)) return toast('Please agree to the Privacy Agreement.', 'error');
 
       busy(btn, true, 'Registering...');
-      api.register(phone, p1).then(function (uid) {
+      api.register(phone, p1, refCode()).then(function (uid) {
+        try { localStorage.removeItem('rs_ref'); } catch (e) {}
         // No UID popup, no login screen — register hone ke baad seedha home.
         try {
           localStorage.setItem('rsclub_uid', uid);

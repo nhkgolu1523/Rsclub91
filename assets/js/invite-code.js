@@ -112,11 +112,28 @@
 
   function wirePromotionLinks() {
     document.addEventListener('click', function (e) {
+      /* "INVITATION LINK" share button -> invite (poster/share) page */
+      var shareBtn = e.target && e.target.closest ? e.target.closest('.shareBtn') : null;
+      if (shareBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!uid()) { window.location.href = '/pages/login/index.html'; return; }
+        var c = currentCode || '';
+        window.location.href = '/pages/invite/index.html' + (c ? ('?code=' + encodeURIComponent(c)) : '');
+        return;
+      }
+
       var item = e.target && e.target.closest ? e.target.closest('.promote__cell-item') : null;
       if (item) {
         var label = item.querySelector('.label span');
         if (label) {
           var text = (label.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+          if (text === 'partner rewards' || text === 'partner reward') {
+            e.preventDefault();
+            e.stopPropagation();
+            window.location.href = '/pages/partner-rewards/index.html';
+            return;
+          }
           if (text === 'subordinate data') {
             e.preventDefault();
             e.stopPropagation();

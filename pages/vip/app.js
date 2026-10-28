@@ -196,6 +196,15 @@
 
     snapTo(nearestIndex(), false);
     updateBenefits();
+
+    /* expose so the backend hook can auto-slide to the user's level */
+    window.__vipCardScrollTo = function (index, smooth) {
+      if (typeof index !== 'number' || !isFinite(index)) return;
+      var max = slides.length - 1;
+      var i = Math.max(0, Math.min(index, max));
+      snapTo(i, !!smooth);
+      updateBenefits();
+    };
   }
 
   /* History / Rules tabs */
