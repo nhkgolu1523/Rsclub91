@@ -78,20 +78,25 @@
     if (!u) return;
     window.RSInvite.commissions({ uid: u }).then(function (res) {
       var list = (res && res.ok && res.list) ? res.list : [];
-      var total = 0, week = 0;
-      var today = new Date(); var wkStart = new Date(today.getTime() - 6 * 86400000);
+      var total = 0, week = 0, yesterday = 0;
+      var today = new Date();
+      var wkStart = new Date(today.getTime() - 6 * 86400000);
+      var yd = new Date(today.getTime() - 86400000);
       function ymd(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
-      var wk = ymd(wkStart);
+      var wk = ymd(wkStart), yes = ymd(yd);
       for (var i = 0; i < list.length; i++) {
         var a = Number(list[i].AMOUNT) || 0;
+        var day = String(list[i].DAY || '');
         total += a;
-        if (String(list[i].DAY || '') >= wk) week += a;
+        if (day >= wk) week += a;
+        if (day === yes) yesterday += a;
       }
       window.__rsCommTotal = Math.round(total * 100) / 100;
       window.__rsCommWeek = Math.round(week * 100) / 100;
-      /* hero "amount" = total (yesterday's total commission ka label, value = total) */
+      window.__rsCommYesterday = Math.round(yesterday * 100) / 100;
+      /* hero "amount" = YESTERDAY ka total commission (label ke mutabik) */
       var amt = document.querySelector('.promotion-hero .amount');
-      if (amt) amt.textContent = window.__rsCommTotal.toFixed(2);
+      if (amt) amt.textContent = window.__rsCommYesterday.toFixed(2);
       /* re-fill promotion data box with fresh totals */
       var boxes = document.querySelectorAll('.commission .commission__body');
       if (boxes[0]) {
