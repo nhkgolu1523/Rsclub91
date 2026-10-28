@@ -24,6 +24,18 @@
     }
   }
 
+  /* ek commission__body row me label ke PEHLE wale span ko value banао */
+  function setRowValue(body, labelText, value) {
+    if (!body) return;
+    var spans = body.querySelectorAll('span');
+    for (var i = 0; i < spans.length; i++) {
+      if (String(spans[i].textContent || '').trim() === labelText && i > 0) {
+        spans[i - 1].textContent = value;
+        return;
+      }
+    }
+  }
+
   function load() {
     if (!window.RSInvite) return;
     var u = window.RSInvite.uid();
@@ -52,22 +64,18 @@
         if (tl[3]) tl[3].querySelector('div').textContent = t['FIRST-DEPOSIT-COUNT'] || 0;
       }
 
-      /* "Promotion data" box: This Week / Total commission / Direct / Total team */
-      var directCount = Number(d.COUNT) || 0;
-      var teamCount = Number(t.COUNT) || 0;
+      /* "Promotion data" box (label ke aage wala span = value) */
       var boxes = document.querySelectorAll('.commission .commission__body');
       if (boxes[0]) {
-        var chips = boxes[0].querySelectorAll('span');
-        if (chips[0]) chips[0].textContent = Number(window.__rsCommWeek || 0).toFixed(2);
-        if (chips[2]) chips[2].textContent = Number(window.__rsCommTotal || 0).toFixed(2);
+        setRowValue(boxes[0], 'This Week', Number(window.__rsCommWeek || 0).toFixed(2));
+        setRowValue(boxes[0], 'Total commission', Number(window.__rsCommTotal || 0).toFixed(2));
       }
       if (boxes[1]) {
-        var chips2 = boxes[1].querySelectorAll('span');
-        if (chips2[0]) chips2[0].textContent = directCount;
-        if (chips2[2]) chips2[2].textContent = teamCount;
+        setRowValue(boxes[1], 'Direct Subordinate', String(d.COUNT || 0));
+        setRowValue(boxes[1], 'Total number of subordinates in the team', String(t.COUNT || 0));
       }
-      window.__rsDirect = directCount;
-      window.__rsTeam = teamCount;
+      window.__rsDirect = Number(d.COUNT) || 0;
+      window.__rsTeam = Number(t.COUNT) || 0;
     });
   }
 
@@ -100,9 +108,8 @@
       /* re-fill promotion data box with fresh totals */
       var boxes = document.querySelectorAll('.commission .commission__body');
       if (boxes[0]) {
-        var c = boxes[0].querySelectorAll('span');
-        if (c[0]) c[0].textContent = window.__rsCommWeek.toFixed(2);
-        if (c[2]) c[2].textContent = window.__rsCommTotal.toFixed(2);
+        setRowValue(boxes[0], 'This Week', window.__rsCommWeek.toFixed(2));
+        setRowValue(boxes[0], 'Total commission', window.__rsCommTotal.toFixed(2));
       }
     });
   }
