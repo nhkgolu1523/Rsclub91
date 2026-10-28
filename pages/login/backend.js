@@ -248,6 +248,24 @@
     }).catch(function () {});
   }
 
+  /* Ensure USERS/<uid>/INVITE-CODE ka INVITE-CODES/<code> index maujood ho.
+     Purane accounts (manual/incomplete) ke liye - taaki link lookup kaam kare. */
+  function ensureInviteIndex(uid) {
+    if (!uid) return;
+    fetch(endpoint(USERS + '/' + uid + '/INVITE-CODE'), { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (code) {
+        if (!code || code === 'NONE') return;
+        var idxUrl = DB_URL + '/INVITE-CODES/' + encodeURIComponent(String(code)) + '.json';
+        return fetch(idxUrl, { cache: 'no-store' }).then(function (r2) { return r2.ok ? r2.json() : null; })
+          .then(function (existing) {
+            if (existing == null) {
+              return fetch(idxUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(String(uid)) });
+            }
+          });
+      }).catch(function () {});
+  }
+
   function createInviteCode(uid) {
     function attempt(tries) {
       var code = genInviteCode();
@@ -389,25 +407,29 @@
       });
     }
 
-    return Promise.all([
-      fetch(endpoint(USERS + '/' + newUid + '/INVITATION-RECORD'), {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(inviterPatch)
-      }).catch(function () {}),
-      fetch(endpoint(USERS + '/' + inviterUid + '/INVITATION-RECORD/SUBORDINATES/' + newUid), {
+    /* pehle naya user ka record + inviter ke SUBORDINATES me entry (sequential),
+       PHIR count derive karo (warna race: SUBORDINATES se pehle count padha jata). */
+    return fetch(endpoint(USERS + '/' + newUid + '/INVITATION-RECORD'), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(inviterPatch)
+    }).catch(function () {}).then(function () {
+      return fetch(endpoint(USERS + '/' + inviterUid + '/INVITATION-RECORD/SUBORDINATES/' + newUid), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(sub)
-      }).catch(function () {}),
-      /* server (worker) ko bhi batao - wahi authoritative link/level karta hai */
-      fetch('https://rsclub-invite.99infinity.workers.dev/register', {
+      }).catch(function () {});
+    }).then(function () {
+      /* server (worker) ko batao - authoritative link/level + chain counts */
+      return fetch('https://rsclub-invite.99infinity.workers.dev/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: String(newUid), refCode: String(inviterCode || '') })
-      }).catch(function () {}),
-      bumpCounts()
-    ]);
+      }).catch(function () {});
+    }).then(function () {
+      /* ab SUBORDINATES padho (naya entry include) aur DIRECT.COUNT set karo */
+      return bumpCounts();
+    });
   }
 
   api.login = function (phone, password) {
@@ -528,6 +550,7 @@
         var finishLogin = function () {
           setTimeout(function () { window.location.href = '../home/index.html'; }, 800);
         };
+        ensureInviteIndex(hit.uid);   /* apne code ka INVITE-CODES index theek karo */
         if (window.RSProfile && window.RSProfile.load) {
           window.RSProfile.load(hit.uid).then(finishLogin, finishLogin);
         } else {
