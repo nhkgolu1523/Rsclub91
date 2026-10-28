@@ -509,10 +509,17 @@
 
   /* ---- register handler ------------------------------------------------- */
   function refCode() {
+    /* 1) visible "Invite code" field (agar user ne dekha/badla) */
+    try {
+      var inp = document.querySelector('.js-view-register input[name="userInvite"]');
+      if (inp) { var iv = String(inp.value || '').trim(); if (iv) return iv; }
+    } catch (e) {}
+    /* 2) URL ?ref= (invite link) */
     try {
       var m = /[?&](?:ref|invitationCode|code)=([^&#]+)/.exec(location.search || '');
       if (m) { var v = decodeURIComponent(m[1]).trim(); if (v && v !== 'null') return v; }
     } catch (e) {}
+    /* 3) saved from link earlier */
     try { return localStorage.getItem('rs_ref') || ''; } catch (e) { return ''; }
   }
   function wireRegister(regView, loginView) {
@@ -578,6 +585,19 @@
 
     /* 1. Privacy ("I have read and agree") pre-ticked on the Register view. */
     if (regView) setChecked(regView.querySelector('.van-checkbox'), true);
+
+    /* 1b. Invite link (?ref=/code=) -> "Invite code" field prefill karo */
+    (function () {
+      var code = '';
+      try {
+        var rp = new URLSearchParams(location.search || '');
+        code = rp.get('ref') || rp.get('invitationCode') || rp.get('code') || '';
+      } catch (e) {}
+      if (!code) { try { code = localStorage.getItem('rs_ref') || ''; } catch (e) {} }
+      if (!code) return;
+      var inp = regView ? regView.querySelector('input[name="userInvite"]') : null;
+      if (inp) { inp.value = String(code).trim(); fireInput(inp); }
+    })();
 
     /* 2. Restore saved phone/email + password (Remember me). */
     var saved = getRemember();
