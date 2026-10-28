@@ -398,14 +398,31 @@ async function handleSubordinates(env, url) {
   const rec = await getRecord(env, uid) || {};
   const subs = rec['SUBORDINATES'] || {};
   const list = [];
+  let lv1 = 0, lvN = 0;
   for (const cid in subs) {
     const s = subs[cid] || {};
+    if (Number(s.LV) === 1) lv1++; else lvN++;
     if (lv && lv !== 'All' && String(s.LV) !== String(lv)) continue;
     if (q && String(cid).indexOf(q) < 0 && String(s.USERNAME || '').toLowerCase().indexOf(q.toLowerCase()) < 0) continue;
     list.push({ uid: cid, LV: s.LV || 0, USERNAME: s.USERNAME || '', JOINED: s.JOINED || '',
       'DEPOSIT-AMOUNT': s['DEPOSIT-AMOUNT'] || 0, 'FIRST-DEPOSIT': s['FIRST-DEPOSIT'] || 0 });
   }
-  return json({ ok: true, summary: rec.DIRECT || {}, team: rec.TEAM || {}, list: list });
+  /* summary/team: stored values ko SUBORDINATES se reconcile karo (COUNT hamesha sahi) */
+  const d = rec.DIRECT || {};
+  const t = rec.TEAM || {};
+  const summary = {
+    COUNT: Math.max(Number(d.COUNT) || 0, lv1),
+    'DEPOSIT-COUNT': Number(d['DEPOSIT-COUNT']) || 0,
+    'DEPOSIT-AMOUNT': Number(d['DEPOSIT-AMOUNT']) || 0,
+    'FIRST-DEPOSIT-COUNT': Number(d['FIRST-DEPOSIT-COUNT']) || 0
+  };
+  const team = {
+    COUNT: Math.max(Number(t.COUNT) || 0, lvN),
+    'DEPOSIT-COUNT': Number(t['DEPOSIT-COUNT']) || 0,
+    'DEPOSIT-AMOUNT': Number(t['DEPOSIT-AMOUNT']) || 0,
+    'FIRST-DEPOSIT-COUNT': Number(t['FIRST-DEPOSIT-COUNT']) || 0
+  };
+  return json({ ok: true, summary: summary, team: team, list: list });
 }
 
 /* GET /commissions?uid=  -> commission detail page */

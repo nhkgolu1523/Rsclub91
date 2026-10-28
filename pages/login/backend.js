@@ -357,6 +357,38 @@
     sub['FIRST-DEPOSIT'] = 0;
     sub['BONUS'] = '';
 
+    /* inviter ke DIRECT.COUNT +1 (aur chain ke TEAM.COUNT +1). Worker bhi
+       karta hai, par agar worker call fail/deferred ho to bhi count na chhoote
+       - isliye client par bhi idempotent-guard ke saath badhaate hain. */
+    function bumpCounts() {
+      function rd(p) { return fetch(endpoint(p), { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }); }
+      function wr(p, v) { return fetch(endpoint(p), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(v) }).catch(function () { }); }
+      /* sirf tab +1 jab ye subordinate pehle se count na ho.
+         COUNT ko SUBORDINATES key-count se derive karte hain (reliable). */
+      var pPath = USERS + '/' + inviterUid + '/INVITATION-RECORD';
+      return rd(pPath + '/SUBORDINATES').then(function (subs) {
+        var n = subs ? Object.keys(subs).length : 1;  /* naye wale ko include karke */
+        if (n < 1) n = 1;
+        return rd(pPath).then(function (rec) {
+          rec = rec || {};
+          var d = rec['DIRECT'] || {};
+          var t = rec['TEAM'] || {};
+          return fetch(endpoint(pPath), {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              'DIRECT': {
+                COUNT: n,
+                'DEPOSIT-COUNT': Number(d['DEPOSIT-COUNT']) || 0,
+                'DEPOSIT-AMOUNT': Number(d['DEPOSIT-AMOUNT']) || 0,
+                'FIRST-DEPOSIT-COUNT': Number(d['FIRST-DEPOSIT-COUNT']) || 0
+              }
+            })
+          }).catch(function () {});
+        });
+      });
+    }
+
     return Promise.all([
       fetch(endpoint(USERS + '/' + newUid + '/INVITATION-RECORD'), {
         method: 'PATCH',
@@ -373,7 +405,8 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: String(newUid), refCode: String(inviterCode || '') })
-      }).catch(function () {})
+      }).catch(function () {}),
+      bumpCounts()
     ]);
   }
 
