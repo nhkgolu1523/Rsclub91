@@ -425,7 +425,8 @@ async function handleSubordinates(env, url) {
     'FIRST-DEPOSIT-COUNT': Number(d['FIRST-DEPOSIT-COUNT']) || 0
   };
   const team = {
-    COUNT: Math.max(Number(t.COUNT) || 0, lvN),
+    /* original: "Team" = poora downline (direct + indirect) */
+    COUNT: lv1 + lvN,
     'DEPOSIT-COUNT': Number(t['DEPOSIT-COUNT']) || 0,
     'DEPOSIT-AMOUNT': Number(t['DEPOSIT-AMOUNT']) || 0,
     'FIRST-DEPOSIT-COUNT': Number(t['FIRST-DEPOSIT-COUNT']) || 0
