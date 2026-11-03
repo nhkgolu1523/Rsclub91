@@ -34,6 +34,15 @@
     try { return new URL(url, location.href).href; } catch (e) { return url; }
   }
 
+  /* Normalize a URL for "same page?" comparison (cleanUrls-aware):
+     trailing '/' aur '/index.html' ek hi page maano. */
+  function normPage(url) {
+    var s = abs(url);
+    s = s.replace(/\/(index\.html)?$/i, '');   /* /x/ or /x/index.html -> /x */
+    s = s.replace(/\.html$/i, '');             /* /x/y.html -> /x/y */
+    return s;
+  }
+
 
   /* --------------------------------------------------------------------------
      Lazy images: the snapshot pages ship <img data-origin="..."> with no src.
@@ -348,9 +357,12 @@
      with what the user sees. pushState keeps this a same-document change, so
      there is still no reload. */
   function syncUrl(url) {
-    if (!url || url === abs(location.href)) return;
+    if (!url || url === abs(location.href) || normPage(url) === normPage(location.href)) return;
+    /* Vercel cleanUrls: URL bar me .html na dikhe (`/x/index.html` -> `/x`).
+       Body swap still uses `url`; sirf display path clean hota hai. */
     try {
-      history.pushState({ tabnav: url }, '', url);
+      var clean = url.replace(/\/index\.html$/i, '/').replace(/\.html$/i, '');
+      history.pushState({ tabnav: url }, '', clean);
     } catch (e) { /* file:// or blocked history API - harmless */ }
   }
 
@@ -426,7 +438,7 @@
        would wipe the green highlight the page's own listener just added.
        NOTE: we compare against CURRENT (what we actually mounted), not
        location.href - the URL can be out of sync with the body. */
-    if (target === CURRENT) return;
+    if (target === CURRENT || normPage(target) === normPage(CURRENT)) return;
 
     if (!canFetch(target)) { location.href = target; return; }
 
@@ -739,7 +751,9 @@
        green tab all telling the same story. */
     window.addEventListener('popstate', function () {
       var here = abs(location.href);
-      if (here === CURRENT) return;
+      /* cleanUrls: URL clean ho sakta hai jabki CURRENT me .html ho - dono ko
+         normalize karke compare karo (warna same page dobara mount hota hai). */
+      if (here === CURRENT || normPage(here) === normPage(CURRENT)) return;
       /* The URL has already moved; mount that exact page without touching
          history. Cached routes swap instantly, new ones are fetched, and only
          a failed fetch falls back to a normal load. */
