@@ -760,7 +760,9 @@
     wireBack();
     paintProfile();
     wireTabGroups();
-    wireFilters();
+    /* transaction-history / bonus-details pages ke apne Vant dropdown JS hain -
+       wahan humara .rs-sheet wala filter NAHI kholna (warna dono double khulte). */
+    if (page !== 'transaction-history' && page !== 'bonus-details') wireFilters();
     wireRebateActions();
 
     if (page === 'settings') wireSettings();

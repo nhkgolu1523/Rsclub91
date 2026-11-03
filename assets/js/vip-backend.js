@@ -54,6 +54,24 @@
 
   function vipUrl(userId) { return FB + '/USERS/' + encodeURIComponent(userId) + '/VIP.json'; }
 
+  function cacheKey(u) { return 'rs_vip_cache_' + u; }
+  function readCache() {
+    var u = uid();
+    if (!u) return null;
+    try {
+      var raw = localStorage.getItem(cacheKey(u));
+      if (!raw) return null;
+      var o = JSON.parse(raw);
+      if (o && typeof o === 'object') return o;
+    } catch (e) {}
+    return null;
+  }
+  function writeCache() {
+    var u = uid();
+    if (!u) return;
+    try { localStorage.setItem(cacheKey(u), JSON.stringify({ exp: state.exp, level: state.level })); } catch (e) {}
+  }
+
   var state = { exp: 0, level: 0 };
   var autoSlided = false;
 
@@ -72,13 +90,22 @@
 
   function setBadge(level) {
     var cls = 'n' + level;
+    /* nickname badge ka class n0..n10 kuch bhi ho sakta hai (early script ya
+       cache se pehle hi set ho jata hai), isliye saare n* pakdo. */
     var badges = document.querySelectorAll(
-      '.vip-header-wrapper-name-vip,.userInfo__container-content-nickname .n0'
+      '.vip-header-wrapper-name-vip,'
+      + '.userInfo__container-content-nickname [class^="n"],'
+      + '.userInfo__container-content-nickname [class*=" n"]'
     );
     for (var i = 0; i < badges.length; i++) {
       var el = badges[i];
-      for (var k = 0; k <= 10; k++) el.classList.remove('n' + k);
+      /* sirf badge elements (n0..n10); baaki nickname children ko chhodo */
+      var isBadge = false;
+      for (var k = 0; k <= 10; k++) if (el.classList.contains('n' + k)) isBadge = true;
+      if (!isBadge && el.className.indexOf('vip-header-wrapper-name-vip') < 0) continue;
+      for (var k2 = 0; k2 <= 10; k2++) el.classList.remove('n' + k2);
       el.classList.add(cls);
+      el.classList.remove('rs-vip-pending');   /* early script ne chhupaya tha -> dikhao */
     }
   }
 
@@ -192,6 +219,7 @@
         if (!data || typeof data !== 'object') { if (cb) cb(null); return; }
         state.exp = num(data.EXP);
         state.level = num(data.LEVEL) || levelForExp(state.exp);
+        writeCache();                         /* agla refresh turant sahi badge dikhaye */
         if (cb) cb(state);
       })
       .catch(function () { if (cb) cb(null); });
@@ -200,8 +228,27 @@
   var timer = null;
   function startPoll() {
     if (timer) return;
+    /* 1) pehle CACHE se turant sahi level/badge lagao - warna hardcoded n0
+          ek pal ke liye dikhta hai (jaisa pehle ho raha tha). */
+    var c = readCache();
+    if (c && isFinite(Number(c.level))) {
+      state.exp = num(c.exp);
+      state.level = num(c.level);
+      paint();
+    }
+    /* 2) phir server se authoritative value. */
     fetchVip(paint);
     timer = setInterval(function () { fetchVip(paint); }, POLL_MS);
+    /* 3) dusre tab/page ne naya level cache kiya ho to turant apply karo. */
+    window.addEventListener('storage', function (e) {
+      if (!e || e.key !== cacheKey(uid())) return;
+      var c2 = readCache();
+      if (c2 && isFinite(Number(c2.level))) {
+        state.exp = num(c2.exp);
+        state.level = num(c2.level);
+        paint();
+      }
+    });
   }
 
   window.RSVip = {

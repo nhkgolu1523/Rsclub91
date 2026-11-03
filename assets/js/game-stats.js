@@ -86,9 +86,29 @@
     return d >= r.from && d <= r.to;
   }
 
+  function anyBetIn(r) {
+    for (var id in state.bets) {
+      var b = state.bets[id];
+      if (b && typeof b === 'object' && inRange(b.TIME, r)) return true;
+    }
+    return false;
+  }
+
+  function latestMonthRange() {
+    var key = '';
+    for (var id in state.bets) {
+      var b = state.bets[id];
+      if (!b || typeof b !== 'object') continue;
+      var m = String(b.TIME || '').slice(0, 7);
+      if (m && m > key) key = m;
+    }
+    if (!key) return null;
+    var y = +key.slice(0, 4), mo = +key.slice(5, 7);
+    return { from: key + '-01', to: ymd(new Date(y, mo, 0)) };
+  }
+
   /* ek type ka aggregate (original row ka data) */
-  function aggregate(src) {
-    var r = rangeFor(state.tab);
+  function aggregate(src, r) {
     var betAmount = 0, betCount = 0, winAmount = 0;
     for (var id in state.bets) {
       var b = state.bets[id];
@@ -133,8 +153,10 @@
     if (!holder) return;
 
     var rows = [], sum = 0;
+    var range = rangeFor(state.tab);
+    if (state.tab === 3 && !anyBetIn(range)) range = latestMonthRange() || range;
     for (var i = 0; i < TYPES.length; i++) {
-      var g = aggregate(TYPES[i]);
+      var g = aggregate(TYPES[i], range);
       sum += g.betAmount;
       rows.push(g);
     }

@@ -128,18 +128,42 @@
     if (!el) return;
     el.setAttribute('name', i === 0 ? 'withdrawAmount' : i === 1 ? 'usdtWithdrawAmount' : 'usdtAmount');
     el.setAttribute('inputmode', 'decimal');
-    el.setAttribute('autocomplete', 'off');
+    /* Browser number-autofill rok: autocomplete ko non-standard token bana do
+       (Chrome/Safari 'off' ko ignore karte hain, par random token se field
+       recognisable nahi rehti). */
+    el.setAttribute('autocomplete', 'nope-' + Math.random().toString(36).slice(2, 10));
     el.setAttribute('autocorrect', 'off');
     el.setAttribute('autocapitalize', 'off');
     el.setAttribute('spellcheck', 'false');
     el.setAttribute('data-lpignore', 'true');
     el.setAttribute('data-1p-ignore', 'true');
     el.setAttribute('data-form-type', 'other');
+    el.setAttribute('data-bwignore', 'true');
+    el.setAttribute('data-protonpass-ignore', 'true');
     if (i === 0) {
       el.setAttribute('type', 'number');
       el.setAttribute('min', '0');
       el.setAttribute('step', '0.01');
     }
+  });
+
+  /* Auto-filled number kabhi na aaye: input ko shuru me `readonly` rakho.
+     Browser autofill readonly field me value nahi likh sakta. Jab user khud
+     touch/click/type kare tab readonly hata kar editable kar do. */
+  function unlockAmount(el) {
+    if (!el) return;
+    if (el.hasAttribute('readonly')) el.removeAttribute('readonly');
+  }
+  function lockAmount(el) {
+    if (!el) return;
+    if (!el.value) el.setAttribute('readonly', 'readonly');
+  }
+  amountInputs.forEach(function (el) {
+    if (!el) return;
+    el.setAttribute('readonly', 'readonly');
+    ['pointerdown', 'touchstart', 'mousedown', 'keydown'].forEach(function (evt) {
+      el.addEventListener(evt, function () { unlockAmount(el); }, { passive: true });
+    });
   });
 
   function clearAmounts() {
@@ -195,6 +219,10 @@
     if (!(input && input.value) && !(usdtWithdrawInput && usdtWithdrawInput.value) && !(usdtAmountInput && usdtAmountInput.value)) return;
     clearAmounts();
     refresh();
+    /* value saaf karne ke baad dobara lock (autofill ke liye) */
+    amountInputs.forEach(function (el) {
+      if (el && document.activeElement !== el) lockAmount(el);
+    });
   }
 
   function watchRestoredAmounts() {
@@ -202,8 +230,10 @@
     if (restoreWatch) clearInterval(restoreWatch);
     clearRestoredAmounts();
     var started = Date.now();
+    /* user ke touch tak / 10s tak har 100ms clear + lock karte raho
+       (browser autofill late bhi aa sakta hai). */
     restoreWatch = setInterval(function () {
-      if (amountTouched || Date.now() - started >= 3000) {
+      if (amountTouched || Date.now() - started >= 10000) {
         clearInterval(restoreWatch);
         restoreWatch = null;
         return;

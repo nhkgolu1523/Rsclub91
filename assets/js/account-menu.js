@@ -118,6 +118,41 @@
     if (nick && /nickname/i.test((nick.textContent || ''))) go('../change-nickname/index.html');
   });
 
+  /* UID row par click -> UID copy + "UID copied" popup (jaisa account
+     sub-pages par hota hai). Row me copy icon bhi hai. */
+  function copyUid() {
+    var uid = stored('rsclub_uid');
+    if (!uid) { toast('Copy failed'); return; }
+    function done(ok) { toast(ok ? 'UID copied' : 'Copy failed'); }
+    function fallback() {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = uid;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        var ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        done(ok);
+      } catch (err) { done(false); }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(uid).then(function () { done(true); }, fallback);
+    } else {
+      fallback();
+    }
+  }
+
+  document.addEventListener('click', function (e) {
+    var row = e.target.closest ? e.target.closest('.userInfo__container-setting-center-content') : null;
+    if (!row) return;
+    var h = row.querySelector('h5');
+    if (!h || !/^uid$/i.test((h.textContent || '').trim())) return;
+    e.preventDefault();
+    copyUid();
+  }, true);
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', profile);
   else profile();
 

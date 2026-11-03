@@ -425,6 +425,7 @@
     /* win credit: same betId -> same txId -> EXACTLY once, chahe kitni baar
        bhi chale (refresh / dusra tab / global settler). */
     function balCredit(amount, betKey) {
+        txAdd('Win', amount, 'Success', 'TXWIN-' + betKey, 'Game win');
         return balApply(balTxId('WIN', betKey), r2(amount));
     }
 
@@ -501,16 +502,68 @@
             var data = null;
             try { data = JSON.parse(txt); } catch (e) { data = null; }
             var exp = 0;
-            if (data && typeof data === 'object') exp = Number(data.EXP) || 0;
+            var prevLevel = 0;
+            if (data && typeof data === 'object') { exp = Number(data.EXP) || 0; prevLevel = Number(data.LEVEL) || 0; }
             exp = Math.round((exp + stake) * 100) / 100;
             var level = vipLevelFor(exp);
             ajax('PATCH', vipUrl(u), JSON.stringify({ EXP: exp, LEVEL: level }), null);
+            /* Badge har jagah turant sahi dikhe - cache update (home/account
+               wagera ke vip-badge-early.js isi cache se padhte hain). */
+            try { localStorage.setItem('rs_vip_cache_' + u, JSON.stringify({ exp: exp, level: level })); } catch (e) {}
+
+            /* VIP history (VIP page ka History tab): log likho.
+               USERS/<uid>/VIP-LOG/<id> = { TYPE, REMARK, EXP, LEVEL, TIME }.
+               Level badle to hamesha; warna agar level>0 hai par ek bhi log
+               nahi (purane users) to current level ka ek baar backfill. */
+            var now = new Date();
+            function pp(n) { return (n < 10 ? '0' : '') + n; }
+            var ts = now.getFullYear() + '-' + pp(now.getMonth() + 1) + '-' + pp(now.getDate()) + ' '
+                + pp(now.getHours()) + ':' + pp(now.getMinutes()) + ':' + pp(now.getSeconds());
+            var logId = 'L' + now.getTime().toString(36) + Math.random().toString(36).slice(2, 6);
+            var logBody = JSON.stringify({
+                TYPE: (level >= prevLevel) ? 5 : 7,     /* 5 = upgraded, 7 = downgraded */
+                REMARK: level, EXP: exp, LEVEL: level, TIME: ts
+            });
+            if (level !== prevLevel) {
+                ajax('PUT', FB_USERS + '/' + encodeURIComponent(u) + '/VIP-LOG/' + encodeURIComponent(logId) + '.json',
+                    logBody, null);
+            } else if (level > 0) {
+                /* purane user ke liye one-time backfill (koi log na ho to) */
+                ajax('GET', FB_USERS + '/' + encodeURIComponent(u) + '/VIP-LOG.json', undefined, function (e2, t2) {
+                    if (e2) return;
+                    if (t2 && t2 !== 'null' && t2 !== '{}') return;   /* pehle se log hai */
+                    ajax('PUT', FB_USERS + '/' + encodeURIComponent(u) + '/VIP-LOG/' + encodeURIComponent(logId) + '.json',
+                        logBody, null);
+                });
+            }
         });
     }
 
     /* Bet event -> invitation worker (team-betting / rebate tier ke liye).
        Fire-and-forget: fail ho to game par koi asar nahi. */
     var INVITE_API = 'https://rsclub-invite.99infinity.workers.dev';
+
+    /* Transaction history me entry likho (USERS/<uid>/TRANSECTION-HISTORY).
+       Fire-and-forget. txId diya ho to wahi id use hoti hai (idempotent). */
+    function txAdd(type, amount, status, txId, note) {
+        var u = balUid();
+        if (!u) return;
+        var id = txId || ('T' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
+        var d = new Date();
+        function p(n) { return (n < 10 ? '0' : '') + n; }
+        var ts = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' '
+            + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+        try {
+            var x = new XMLHttpRequest();
+            x.open('PUT', FB_USERS + '/' + encodeURIComponent(u) + '/TRANSECTION-HISTORY/' + encodeURIComponent(id) + '.json', true);
+            x.setRequestHeader('Content-Type', 'application/json');
+            x.send(JSON.stringify({
+                TYPE: String(type), AMOUNT: r2(amount), STATUS: String(status || 'Success'),
+                TIME: ts, NOTE: String(note || '')
+            }));
+        } catch (e) {}
+    }
+
     function inviteBet(stake) {
         var u = balUid();
         if (!u || !(stake > 0)) return;
@@ -1306,6 +1359,7 @@
         balApply(balTxId('BET', betId), -stake);
         vipAddExp(stake);
         inviteBet(stake);
+        txAdd('Bet', stake, 'Success', 'TXBET-' + betId, 'Bet placed');
 
         var bets = getBets(t);
         bets.unshift({
@@ -1331,6 +1385,7 @@
               Write fail -> usi id se REFUND (na paisa kata, na double). */
         betHistoryPush(t, bets[0], issue, stake, betId, function () {
             balApply(balTxId('REF', betId), stake);
+            txAdd('Game refunded', stake, 'Success', 'TXREF-' + betId, 'Bet refunded');
             var list = getBets(t);
             for (var i = 0; i < list.length; i++) {
                 if (list[i] && list[i].fbId === betId) { list.splice(i, 1); break; }

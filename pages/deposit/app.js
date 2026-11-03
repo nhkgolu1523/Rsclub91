@@ -119,7 +119,25 @@
         okText: 'I have paid',
         onOk: function () {
           RS.toast('Deposit request submitted. Awaiting confirmation.');
-          /* invitation worker ko deposit event (commission/bonus/team stats).
+          /* 1) Transaction history me entry (Deposit, Pending) */
+          try {
+            var u0 = localStorage.getItem('rsclub_uid') || '';
+            if (u0 && window.RSTx) {
+              window.RSTx.add({ TYPE: 'Deposit', AMOUNT: v, STATUS: 'Pending', NOTE: method || '' });
+            } else if (u0) {
+              /* RSTx load na hua ho to seedha likh do */
+              var d = new Date();
+              var p = function (n) { return (n < 10 ? '0' : '') + n; };
+              var ts = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' '
+                + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+              fetch('https://rsclub91-62526-default-rtdb.firebaseio.com/USERS/' + encodeURIComponent(u0)
+                + '/TRANSECTION-HISTORY/T' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7) + '.json', {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ TYPE: 'Deposit', AMOUNT: Number(v) || 0, STATUS: 'Pending', TIME: ts, NOTE: method || '' })
+              }).catch(function () {});
+            }
+          } catch (e) {}
+          /* 2) invitation worker ko deposit event (commission/bonus/team stats).
              NOTE: real deposit confirm hone par hi credit hona chahiye; abhi
              ye UI-test keen liye bheja ja raha hai. */
           try {

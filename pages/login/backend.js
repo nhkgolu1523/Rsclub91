@@ -380,17 +380,21 @@
        - isliye client par bhi idempotent-guard ke saath badhaate hain. */
     function bumpCounts() {
       function rd(p) { return fetch(endpoint(p), { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }); }
-      function wr(p, v) { return fetch(endpoint(p), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(v) }).catch(function () { }); }
-      /* sirf tab +1 jab ye subordinate pehle se count na ho.
-         COUNT ko SUBORDINATES key-count se derive karte hain (reliable). */
+      /* DIRECT.COUNT = sirf LV===1 entries (seedha invite).
+         SUBORDINATES me L2+ bhi hote hain (worker chain) - unhe DIRECT me
+         ginna galat tha (isliye pehle count phool jata tha). */
       var pPath = USERS + '/' + inviterUid + '/INVITATION-RECORD';
       return rd(pPath + '/SUBORDINATES').then(function (subs) {
-        var n = subs ? Object.keys(subs).length : 1;  /* naye wale ko include karke */
-        if (n < 1) n = 1;
+        var n = 0;
+        for (var k in (subs || {})) {
+          if (Number((subs[k] || {}).LV) === 1) n++;
+        }
         return rd(pPath).then(function (rec) {
           rec = rec || {};
           var d = rec['DIRECT'] || {};
-          var t = rec['TEAM'] || {};
+          /* server-authoritative: agar server ne bada count diya ho to chhota na karo */
+          var serverCount = Number(d.COUNT) || 0;
+          if (serverCount > n) n = serverCount;
           return fetch(endpoint(pPath), {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },

@@ -89,6 +89,6 @@
     else if (label === 'account') bind(tab, function () { go('/pages/account/index.html'); });
   });
   bind(document.querySelector('.tabbar__center'), function () {
-    go('../deposit/index.html');
+    toast('Coming soon');
   });
 })();

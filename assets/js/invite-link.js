@@ -72,16 +72,29 @@
   }
 
   function load() {
-    /* 1) URL param code (invite page button deta hai) */
+    /* 1) URL param code (invite page button deta hai) — turant, network se pehle */
     var c = param('code') || param('ref') || param('invitationCode');
-    if (c) setFromCode(c);
-    /* 2) Firebase se apna code */
+    if (c) { setFromCode(c); return; }   /* mil gaya -> network wait ki zarurat nahi */
+
     var u = uid();
     if (!u) return;
+
+    /* 2) Cache se turant apna link dikhao (koi khaali/placeholder flash nahi) */
+    var cacheKey = 'rs_invite_link_cache_' + u;
+    try {
+      var cached = localStorage.getItem(cacheKey) || '';
+      if (cached) applyLink(cached);
+    } catch (e) {}
+
+    /* 3) Firebase se apna code (authoritative) */
     fetch(FB + '/USERS/' + encodeURIComponent(u) + '/INVITE-CODE.json', { cache: 'no-store' })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (code) {
-        if (code && String(code) !== 'NONE') setFromCode(String(code));
+        if (code && String(code) !== 'NONE') {
+          var link = buildLink(String(code));
+          applyLink(link);
+          try { localStorage.setItem(cacheKey, link); } catch (e) {}
+        }
       })
       .catch(function () {});
   }

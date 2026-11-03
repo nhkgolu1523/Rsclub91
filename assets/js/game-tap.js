@@ -146,8 +146,15 @@
     if (document.getElementById(TOAST_STYLE_ID)) return;
     var style = document.createElement('style');
     style.id = TOAST_STYLE_ID;
-    style.textContent = '#' + TOAST_ID + '{position:fixed;left:50%;top:50%;z-index:100001;max-width:8rem;padding:.22rem .42rem;border-radius:.4rem;background:rgba(20,21,27,.96);color:#fff;font-size:.32rem;line-height:1.45;text-align:center;opacity:0;transform:translate(-50%,-50%);transition:opacity .18s ease;pointer-events:none;}' +
-      '#' + TOAST_ID + '.rs-coming-soon--show{opacity:1;}';
+    /* Coming Soon popup (overlay + centered box) - baaki games jaisa */
+    style.textContent =
+      '#' + TOAST_ID + '{position:fixed;left:0;right:0;top:0;bottom:0;z-index:100001;display:none;'
+      + 'align-items:center;justify-content:center;}'
+      + '#' + TOAST_ID + '.rs-coming-soon--show{display:flex;}'
+      + '#' + TOAST_ID + ' .rs-cs-ov{position:absolute;left:0;right:0;top:0;bottom:0;background:rgba(0,0,0,.6);}'
+      + '#' + TOAST_ID + ' .rs-cs-box{position:relative;z-index:1;min-width:200px;max-width:80vw;box-sizing:border-box;'
+      + 'background:linear-gradient(90deg,#f7c948,#1fb98a);color:#0a0a14;font-family:Roboto,Inter,sans-serif;'
+      + 'font-size:16px;font-weight:600;text-align:center;border-radius:10px;padding:14px 24px;}';
     (document.head || document.documentElement).appendChild(style);
   }
 
@@ -158,7 +165,12 @@
     var el = document.createElement('div');
     el.id = TOAST_ID;
     el.className = 'rs-coming-soon';
+    el.innerHTML = '<div class="rs-cs-ov"></div><div class="rs-cs-box">Coming Soon</div>';
     document.body.appendChild(el);
+    var ov = el.querySelector('.rs-cs-ov');
+    if (ov) ov.addEventListener('click', hideComingSoon);
+    var box = el.querySelector('.rs-cs-box');
+    if (box) box.addEventListener('click', hideComingSoon);
     return el;
   }
 
@@ -166,10 +178,11 @@
 
   function showComingSoon(gameName) {
     var el = ensureToast();
-    el.textContent = 'Coming Soon';
-    requestAnimationFrame(function () { el.classList.add('rs-coming-soon--show'); });
+    var box = el.querySelector('.rs-cs-box');
+    if (box) box.textContent = 'Coming Soon';
+    el.classList.add('rs-coming-soon--show');
     if (hideTimer) clearTimeout(hideTimer);
-    hideTimer = setTimeout(hideComingSoon, 1600);
+    hideTimer = setTimeout(hideComingSoon, 1000);
   }
 
   function hideComingSoon() {
@@ -216,7 +229,13 @@
       return;
     }
 
-    if (gameValueExists(gameName)) showComingSoon(gameName);
+    if (gameValueExists(gameName)) { showComingSoon(gameName); return; }
+
+    /* Activity/promo cards (e.g. "Your Daily Bonus Awaits", "Spin for Luck")
+       real game nahi hain - in par bhi Coming Soon popup dikhao. */
+    if (card.classList && card.classList.contains('activity-cards__item')) {
+      showComingSoon(gameName);
+    }
   }
 
   window.RSGameTap = {

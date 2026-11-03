@@ -28,20 +28,18 @@
     } else {
       for (var i = 0; i < list.length; i++) {
         var c = list[i];
-        html += '<div class="myCommission__container-content__item-body">'
-          + '<div class="rs-comm-row">'
-          + '<div class="rs-comm-left">'
-          + '<span>Agent level</span>'
-          + '<span class="rs-comm-lv">L' + esc(c.LV || 0) + '</span>'
-          + '</div>'
-          + '<div class="rs-comm-right">'
-          + '<span>Commission</span>'
-          + '<span class="rs-comm-amt">' + money(c.AMOUNT) + '</span>'
-          + '</div>'
-          + '<div class="rs-comm-right">'
-          + '<span>Date</span>'
-          + '<span class="rs-comm-time">' + esc(c.TIME || c.DAY || '') + '</span>'
-          + '</div>'
+        var pct = (Number(c.RATE) || 0) ? ((Number(c.RATE) * 100).toFixed(3).replace(/\.?0+$/, '') + '%') : '';
+        html += '<div class="myCommission__container-content__item">'
+          + '<div class="myCommission__container-content__item-body">'
+          + '<p class="settle">Settlement successful</p>'
+          + '<span class="time">' + esc(c.TIME || c.DAY || '') + '</span>'
+          + '<p class="sub">The commission has been automatically credited to your balance</p>'
+          + '<div><span>Agent level</span><span class="level">L' + esc(c.LV || 0) + '</span></div>'
+          + '<div><span>Bet amount</span><span class="amount grey">' + money(c['BET-AMOUNT']) + '</span></div>'
+          + '<div><span>Number of bettors</span><span class="amount grey">1 people</span></div>'
+          + '<div><span>Payout rate</span><span class="amount grey">' + esc(pct) + '</span></div>'
+          + '<div><span>Commission payout</span><span class="amount orange fw">' + money(c.AMOUNT) + '</span></div>'
+          + '<div><span>Date</span><span class="amount grey">' + esc((c.DAY || '') + ' ' + (String(c.TIME || '').split(' ')[1] || '')) + '</span></div>'
           + '</div></div>';
       }
     }
@@ -65,14 +63,21 @@
     var st = document.createElement('style');
     st.id = 'rs-comm-css';
     st.textContent =
-      '.rs-comm-list{padding:.2rem .3rem}'
-      + '.myCommission__container-content__item-body{background:var(--bg_color_L2);border-radius:.16rem;'
-      + 'padding:.26rem .3rem;margin-bottom:.2rem}'
-      + '.rs-comm-row{display:flex;flex-direction:column;gap:.14rem}'
-      + '.rs-comm-left,.rs-comm-right{display:flex;justify-content:space-between;align-items:center;font-size:.32rem;color:var(--text_color_L2)}'
-      + '.rs-comm-lv{background:var(--main_gradient-color);color:#fff;font-weight:700;border-radius:.1rem;padding:.04rem .18rem}'
-      + '.rs-comm-amt{color:var(--norm_green-color);font-weight:700}'
-      + '.rs-comm-time{color:var(--text_color_L2)}';
+      '.rs-comm-list{padding:0 .3rem}'
+      + '.rs-comm-list.myCommission__container-content{display:flex;flex-direction:column;gap:.26667rem;margin-top:.56rem}'
+      + '.rs-comm-list .myCommission__container-content__item{border-radius:.13333rem;font-size:.34667rem;font-weight:500;background:var(--bg_color_L2)}'
+      + '.rs-comm-list .myCommission__container-content__item-body{display:flex;flex-direction:column;gap:.2rem;padding:.26667rem .13333rem;color:var(--text_color_L2);font-size:.32rem}'
+      + '.rs-comm-list .myCommission__container-content__item-body .settle{font-size:.37333rem;font-weight:600;color:var(--main-color);margin:0;padding-left:.26667rem}'
+      + '.rs-comm-list .myCommission__container-content__item-body .time{font-size:.32rem;color:var(--text_color_L2);padding-left:.26667rem}'
+      + '.rs-comm-list .myCommission__container-content__item-body .sub{font-size:.32rem;color:var(--text_color_L2);margin:0 0 .08rem;padding-left:.26667rem}'
+      + '.rs-comm-list .myCommission__container-content__item-body>div{display:flex;justify-content:space-between;background-color:var(--bg_color_L3)}'
+      + '.rs-comm-list .myCommission__container-content__item-body>div span{height:.8rem;padding:0 .26667rem;color:var(--text_color_L2);font-size:.32rem;line-height:.8rem}'
+      + '.rs-comm-list .myCommission__container-content__item-body>div span:first-of-type{flex:.45}'
+      + '.rs-comm-list .myCommission__container-content__item-body>div .amount{color:var(--norm_secondary-color);font-size:.4rem}'
+      + '.rs-comm-list .myCommission__container-content__item-body>div .amount.orange{color:var(--norm_secondary-color)}'
+      + '.rs-comm-list .myCommission__container-content__item-body>div .amount.grey{color:var(--text_color_L1)}'
+      + '.rs-comm-list .myCommission__container-content__item-body>div .amount.fw{font-weight:600}'
+      + '.rs-comm-list .myCommission__container-content__item-body>div .level{color:var(--main-color);font-size:.4rem;font-weight:700}';
     document.head.appendChild(st);
   }
 

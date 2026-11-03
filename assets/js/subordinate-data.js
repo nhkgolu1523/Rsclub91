@@ -31,13 +31,16 @@
   function renderSummary(s, team) {
     var cols = headerEls();
     if (!cols) return;
-    /* header (jaisa original): DIRECT bucket se */
+    /* header columns (page order):
+       0 Deposit number  1 Deposit amount  2 Number of bettors
+       3 Total bet       4 Number of people making first deposit
+       5 First deposit amount */
     setStat(cols, 0, (s['DEPOSIT-COUNT'] || 0));                 /* Deposit number */
     setStat(cols, 1, money(s['DEPOSIT-AMOUNT']));               /* Deposit amount */
-    setStat(cols, 2, (team['COUNT'] || 0));                     /* Number of bettors (team count ~) */
-    setStat(cols, 3, money(0));                                 /* Total bet (team bet yahan) */
+    setStat(cols, 2, (team['BETTOR-COUNT'] || team['COUNT'] || 0)); /* Number of bettors */
+    setStat(cols, 3, money(team['TEAM-BET']));                  /* Total bet (team) */
     setStat(cols, 4, (s['FIRST-DEPOSIT-COUNT'] || 0));          /* Number first deposit */
-    setStat(cols, 5, money(0));                                 /* First deposit amount */
+    setStat(cols, 5, money(s['FIRST-DEPOSIT-AMOUNT']));         /* First deposit amount */
   }
 
   function renderList(list) {

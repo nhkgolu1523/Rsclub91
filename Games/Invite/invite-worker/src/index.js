@@ -130,6 +130,22 @@ async function creditBalance(env, uid, amount, txId) {
   return true;
 }
 
+/* Transaction history entry (USERS/<uid>/TRANSECTION-HISTORY/<id>).
+   idempotent: agar id pehle se hai to skip (dobara credit par double row nahi). */
+async function txWrite(env, uid, type, amount, status, txId, note) {
+  if (!uid || !(amount > 0)) return;
+  const id = txId ? ('TX' + encodeURIComponent(txId)) : newId('T');
+  const path = '/USERS/' + encodeURIComponent(uid) + '/TRANSECTION-HISTORY/' + id;
+  if (txId && await fbGet(env, path)) return;      /* already logged */
+  await fbSet(env, path, {
+    TYPE: String(type || 'Bonus'),
+    AMOUNT: r2(amount),
+    STATUS: String(status || 'Success'),
+    TIME: stamp(),
+    NOTE: String(note || '')
+  });
+}
+
 /* ---------------- REBATE TIER (L0..L10) ----------------
    Team Number / Team Betting / Team Deposit thresholds.
    Jo bhi L0 se upar sabse zyada tier meet kare, wahi level. */
@@ -183,46 +199,55 @@ function firstDepositBonus(cfg, deposit, turnover) {
 
 /* ================= endpoints ================= */
 
-/* POST /register  { uid, refCode }  -> inviter link + node banana */
+/* POST /register  { uid, refCode }  -> inviter link + node banana
+
+   IDEMPOTENT / SELF-HEALING:
+   Client (pages/login/backend.js linkInviter) apna INVITED-BY kabhi worker se
+   PEHLE likh deta hai, isliye yahan "INVITED-BY already hai" dekh kar exit
+   karna galat tha - us se chain walk (L2, L3... TEAM counts + nested
+   SUBORDINATES) poori tarah SKIP ho jata tha.
+
+   Ab: inviter ko (a) diye gaye refCode se, warna (b) record par pehle se
+   likhe INVITED-BY se nikalte hain, aur chain ko phir bhi walk karte hain.
+   Har ancestor par SUBORDINATES/<uid> add karte hain aur COUNT sirf tab
+   badhaate hain jab wo SUBORDINATES entry pehle se na ho (dobara call par
+   double-count nahi). Isse purana adhoora data bhi khud theek ho jata hai. */
 async function handleRegister(env, body) {
   const cfg = await getConfig(env);
   const uid = String(body.uid || '').trim();
   const refCode = String(body.refCode || '').trim();
   if (!uid) return json({ ok: false, error: 'uid required' }, 400);
 
-  const record = await fbGet(env, '/USERS/' + encodeURIComponent(uid) + '/INVITATION-RECORD') || {};
-  if (record['INVITED-BY']) return json({ ok: true, already: true });
+  const myPath = '/USERS/' + encodeURIComponent(uid) + '/INVITATION-RECORD';
+  const record = await fbGet(env, myPath) || {};
 
+  /* inviter: pehle refCode se, warna record par pehle se likhi INVITED-BY se */
   let inviterUid = '';
   if (refCode && refCode !== 'NONE') {
     inviterUid = String(await fbGet(env, '/INVITE-CODES/' + encodeURIComponent(refCode)) || '');
   }
+  if (!inviterUid) inviterUid = String(record['INVITED-BY'] || '');
   if (!inviterUid || inviterUid === uid) {
-    return json({ ok: true, linked: false });
+    return json({ ok: true, linked: false, already: !!record['INVITED-BY'] });
   }
 
-  const days = Number(cfg['REFERRAL-VALID-DAYS']) || 7;
-  const now = new Date();
-  const dl = new Date(now.getTime() + days * 86400000);
+  /* naye user ka INVITED-BY + deadline (agar pehle se nahi hai to) */
+  if (!record['INVITED-BY']) {
+    const days = Number(cfg['REFERRAL-VALID-DAYS']) || 7;
+    const now = new Date();
+    const dl = new Date(now.getTime() + days * 86400000);
+    await fbPatch(env, myPath, {
+      'INVITED-BY': inviterUid,
+      'INVITED-AT': stamp(),
+      'REFERRAL-DEADLINE': dl.toISOString()
+    });
+  }
 
-  await fbPatch(env, '/USERS/' + encodeURIComponent(uid) + '/INVITATION-RECORD', {
-    'INVITED-BY': inviterUid,
-    'INVITED-AT': stamp(),
-    'REFERRAL-DEADLINE': dl.toISOString()
-  });
-
-  /* inviter ke SUBORDINATES me lv1 entry */
   const uname = String((await fbGet(env, '/USERS/' + encodeURIComponent(uid) + '/PROFILE/USERNAME')) || '');
-  await fbSet(env, '/USERS/' + encodeURIComponent(inviterUid) + '/INVITATION-RECORD/SUBORDINATES/' + encodeURIComponent(uid), {
-    LV: 1,
-    JOINED: stamp(),
-    USERNAME: uname,
-    'DEPOSIT-AMOUNT': 0,
-    'FIRST-DEPOSIT': 0,
-    BONUS: ''
-  });
 
-  /* chain ke saare level par COUNT +1 (L1 = DIRECT, L2+ = TEAM) */
+  /* chain ke saare level par COUNT +1 (L1 = DIRECT, L2+ = TEAM).
+     COUNT sirf tab +1 jab us ancestor ke SUBORDINATES me ye uid pehle se na ho
+     -> idempotent (retry / self-heal par double-count nahi). */
   let c = uid, lv = 0;
   while (lv < MAX_LEVELS) {
     const cRec = await getRecord(env, c) || {};
@@ -230,6 +255,17 @@ async function handleRegister(env, body) {
     if (!pUid) break;
     lv++;
     const pPath = '/USERS/' + encodeURIComponent(pUid) + '/INVITATION-RECORD';
+
+    /* pehle se linked? (SUBORDINATES me entry) -> COUNT ko haath na lagao */
+    const existing = await fbGet(env, pPath + '/SUBORDINATES/' + encodeURIComponent(uid));
+    if (existing && existing.LV) { c = pUid; continue; }
+
+    /* SUBORDINATES entry banao (nested, multi-level chain ke liye) */
+    await fbSet(env, pPath + '/SUBORDINATES/' + encodeURIComponent(uid), {
+      LV: lv, JOINED: stamp(), USERNAME: uname, 'DEPOSIT-AMOUNT': 0, 'FIRST-DEPOSIT': 0, BONUS: ''
+    });
+
+    /* ab bucket COUNT +1 (L1 = DIRECT, L2+ = TEAM) */
     const par = await fbGet(env, pPath) || {};
     const bucket = (lv === 1) ? 'DIRECT' : 'TEAM';
     const b = par[bucket] || {};
@@ -241,19 +277,105 @@ async function handleRegister(env, body) {
       'FIRST-DEPOSIT-COUNT': Number(b['FIRST-DEPOSIT-COUNT']) || 0
     };
     await fbPatch(env, pPath, p);
-    /* nested SUBORDINATES entry bhi (multi-level chain ke liye) */
-    if (lv > 1) {
-      const sub2 = await fbGet(env, pPath + '/SUBORDINATES/' + encodeURIComponent(uid)) || {};
-      if (!sub2.LV) {
-        await fbSet(env, pPath + '/SUBORDINATES/' + encodeURIComponent(uid), {
-          LV: lv, JOINED: stamp(), USERNAME: uname, 'DEPOSIT-AMOUNT': 0, 'FIRST-DEPOSIT': 0, BONUS: ''
-        });
-      }
-    }
+
     c = pUid;
   }
 
   return json({ ok: true, linked: true, inviter: inviterUid });
+}
+
+/* POST /repair-chain  { root? }  -> purana adhoora data theek karo.
+   Har user ka INVITED-BY (child -> parent) padh kar INVITATION-RECORD ke
+   DIRECT/TEAM COUNT + nested SUBORDINATES ko dobara derive karta hai.
+   root diya ho to sirf usi sub-tree ko (public allowed); warna poora (admin). */
+async function handleRepairChain(env, body, req) {
+  const key = req.headers.get('X-Admin-Key') || '';
+  const root = String((body && body.root) || '').trim();
+  const authorized = env.ADMIN_KEY && key === env.ADMIN_KEY;
+  if (!authorized && !root) return json({ ok: false, error: 'unauthorized' }, 401);
+
+  const users = await fbGet(env, '/USERS') || {};
+
+  /* child -> parent map */
+  const parentOf = {};
+  for (const uid in users) {
+    const rec = users[uid] && users[uid]['INVITATION-RECORD'];
+    const p = rec && rec['INVITED-BY'];
+    if (p && String(p) !== String(uid)) parentOf[uid] = String(p);
+  }
+
+  /* root diya -> uske saare descendants; warna saare users */
+  let targets;
+  if (root) {
+    const childrenOf = {};
+    for (const c in parentOf) { (childrenOf[parentOf[c]] = childrenOf[parentOf[c]] || []).push(c); }
+    targets = [root];
+    const stack = [root], seen = { root: 1 };
+    while (stack.length) {
+      const u = stack.pop();
+      const kids = childrenOf[u] || [];
+      for (const k of kids) { if (!seen[k]) { seen[k] = 1; targets.push(k); stack.push(k); } }
+    }
+  } else {
+    targets = Object.keys(users);
+  }
+
+  /* Har target ke har ancestor (L1..L6) par missing SUBORDINATES entry banao */
+  for (const uid of targets) {
+    const uname = String(((users[uid] && users[uid].PROFILE && users[uid].PROFILE.USERNAME)) || '');
+    let childUid = uid, lv = 0;
+    while (lv < MAX_LEVELS) {
+      const pUid = String(parentOf[childUid] || '');
+      if (!pUid) break;
+      lv++;
+      const pPath = '/USERS/' + encodeURIComponent(pUid) + '/INVITATION-RECORD';
+      const existed = await fbGet(env, pPath + '/SUBORDINATES/' + encodeURIComponent(uid));
+      if (!existed || !existed.LV) {
+        await fbSet(env, pPath + '/SUBORDINATES/' + encodeURIComponent(uid), {
+          LV: lv, JOINED: stamp(), USERNAME: uname, 'DEPOSIT-AMOUNT': 0, 'FIRST-DEPOSIT': 0, BONUS: ''
+        });
+      }
+      childUid = pUid;
+    }
+  }
+
+  /* Ab har affected ancestor ka COUNT = SUBORDINATES key-count (L1 -> DIRECT,
+     L2+ -> TEAM). Idempotent: dobara chalane par same result. */
+  const recount = {};
+  for (const uid of targets) {
+    let childUid = uid, lv = 0;
+    while (lv < MAX_LEVELS) {
+      const pUid = String(parentOf[childUid] || '');
+      if (!pUid) break;
+      lv++;
+      const r = recount[pUid] || (recount[pUid] = { lv1: {}, team: {} });
+      if (lv === 1) r.lv1[uid] = 1; else r.team[uid] = 1;
+      childUid = pUid;
+    }
+  }
+  let recounts = 0;
+  for (const pUid in recount) {
+    const pPath = '/USERS/' + encodeURIComponent(pUid) + '/INVITATION-RECORD';
+    const par = await fbGet(env, pPath) || {};
+    const d = par.DIRECT || {}, t = par.TEAM || {};
+    await fbPatch(env, pPath, {
+      DIRECT: {
+        COUNT: Object.keys(recount[pUid].lv1).length,
+        'DEPOSIT-COUNT': Number(d['DEPOSIT-COUNT']) || 0,
+        'DEPOSIT-AMOUNT': Number(d['DEPOSIT-AMOUNT']) || 0,
+        'FIRST-DEPOSIT-COUNT': Number(d['FIRST-DEPOSIT-COUNT']) || 0
+      },
+      TEAM: {
+        COUNT: Object.keys(recount[pUid].team).length,
+        'DEPOSIT-COUNT': Number(t['DEPOSIT-COUNT']) || 0,
+        'DEPOSIT-AMOUNT': Number(t['DEPOSIT-AMOUNT']) || 0,
+        'FIRST-DEPOSIT-COUNT': Number(t['FIRST-DEPOSIT-COUNT']) || 0
+      }
+    });
+    recounts++;
+  }
+
+  return json({ ok: true, scanned: targets.length, recounts: recounts, root: root || null });
 }
 
 /* POST /deposit  { uid, amount, turnover }  -> inviter ko bonus + commission + team */
@@ -293,7 +415,8 @@ async function handleDeposit(env, body) {
       COUNT: Number(b.COUNT) || 0,
       'DEPOSIT-COUNT': (Number(b['DEPOSIT-COUNT']) || 0) + 1,
       'DEPOSIT-AMOUNT': r2((Number(b['DEPOSIT-AMOUNT']) || 0) + amount),
-      'FIRST-DEPOSIT-COUNT': (Number(b['FIRST-DEPOSIT-COUNT']) || 0) + (firstDeposit ? 1 : 0)
+      'FIRST-DEPOSIT-COUNT': (Number(b['FIRST-DEPOSIT-COUNT']) || 0) + (firstDeposit ? 1 : 0),
+      'FIRST-DEPOSIT-AMOUNT': r2((Number(b['FIRST-DEPOSIT-AMOUNT']) || 0) + (firstDeposit ? amount : 0))
     };
     await fbPatch(env, parentPath, patch);
 
@@ -325,6 +448,7 @@ async function handleDeposit(env, body) {
         const txId = 'FDB:' + uid;
         const credited = await creditBalance(env, parentUid, bonus, txId);
         if (credited) {
+          await txWrite(env, parentUid, 'First deposit bonus', bonus, 'Success', txId, 'From ' + childUid);
           await fbSet(env, parentPath + '/FIRST-DEPOSIT-BONUS/' + encodeURIComponent(txId), {
             FROM: childUid, DEPOSIT: r2(amount), TURNOVER: r2(turnover),
             BONUS: bonus, TIME: stamp(), STATUS: 'CREDITED'
@@ -375,7 +499,16 @@ async function handleBet(env, body) {
     const teamDeposit = Number((parent.TEAM && parent.TEAM['DEPOSIT-AMOUNT']) || 0) +
       Number((parent.DIRECT && parent.DIRECT['DEPOSIT-AMOUNT']) || 0);
     const lv = tierFor(cfg, teamNum, teamBet, teamDeposit);
-    await fbPatch(env, parentPath, { 'TEAM-BET': teamBet, LEVEL: lv });
+    const patch = { 'TEAM-BET': teamBet, LEVEL: lv };
+
+    /* BETTOR-COUNT: jitne distinct subordinates ne kabhi bet kiya (per ancestor).
+       BETTORS/<bettorUid> marker se unique count - dobara bet par +1 nahi. */
+    const bettorMark = await fbGet(env, parentPath + '/BETTORS/' + encodeURIComponent(uid));
+    if (!bettorMark) {
+      await fbSet(env, parentPath + '/BETTORS/' + encodeURIComponent(uid), stamp());
+      patch['BETTOR-COUNT'] = (Number(parent['BETTOR-COUNT']) || 0) + 1;
+    }
+    await fbPatch(env, parentPath, patch);
 
     /* COMMISSION (original): inviter ke AGENT-LEVEL (L0..L10) par, down-level = 'level',
        hisaab = game TURNOVER (stake) ka %. deposit par nahi. */
@@ -384,10 +517,15 @@ async function handleBet(env, body) {
     const comm = r2(stake * rate);
     if (comm > 0) {
       const cid = newId('C');
+      /* original detail page fields: Agent level, Bet amount, Number of bettors,
+         Commission payout, Date (+ FROM user, stake that generated it). */
+      const fromName = String((parent.SUBORDINATES && parent.SUBORDINATES[childUid] && parent.SUBORDINATES[childUid].USERNAME) || '');
       await fbSet(env, parentPath + '/COMMISSIONS/' + encodeURIComponent(cid), {
-        AMOUNT: comm, LV: level, 'AGENT-LV': agentLv, FROM: childUid, DAY: dayStamp(), TIME: stamp()
+        AMOUNT: comm, LV: level, 'AGENT-LV': agentLv, FROM: childUid, 'FROM-NAME': fromName,
+        'BET-AMOUNT': r2(stake), RATE: rate, DAY: dayStamp(), TIME: stamp()
       });
       await creditBalance(env, parentUid, comm, 'CMM:' + cid);
+      await txWrite(env, parentUid, 'Agent commission', comm, 'Success', 'CMM:' + cid, 'L' + level + ' bet');
     }
 
     childUid = parentUid;
@@ -418,11 +556,14 @@ async function handleSubordinates(env, url) {
   /* summary/team: stored values ko SUBORDINATES se reconcile karo (COUNT hamesha sahi) */
   const d = rec.DIRECT || {};
   const t = rec.TEAM || {};
+  const teamBet = r2(Number(rec['TEAM-BET']) || 0);
+  /* bettor count = jitne subordinates ne kam se kam ek baar bet kiya (LV1+LVN) */
   const summary = {
     COUNT: Math.max(Number(d.COUNT) || 0, subsLv1),
     'DEPOSIT-COUNT': Number(d['DEPOSIT-COUNT']) || 0,
     'DEPOSIT-AMOUNT': Number(d['DEPOSIT-AMOUNT']) || 0,
-    'FIRST-DEPOSIT-COUNT': Number(d['FIRST-DEPOSIT-COUNT']) || 0
+    'FIRST-DEPOSIT-COUNT': Number(d['FIRST-DEPOSIT-COUNT']) || 0,
+    'FIRST-DEPOSIT-AMOUNT': Number(d['FIRST-DEPOSIT-AMOUNT']) || 0
   };
   /* original: "Team" = poora downline (direct + indirect) -> DIRECT + TEAM sum.
      COUNT = saare subordinates (koi bhi level). */
@@ -430,7 +571,9 @@ async function handleSubordinates(env, url) {
     COUNT: Math.max((Number(d.COUNT) || 0) + (Number(t.COUNT) || 0), subsLv1 + subsLvN),
     'DEPOSIT-COUNT': (Number(d['DEPOSIT-COUNT']) || 0) + (Number(t['DEPOSIT-COUNT']) || 0),
     'DEPOSIT-AMOUNT': r2((Number(d['DEPOSIT-AMOUNT']) || 0) + (Number(t['DEPOSIT-AMOUNT']) || 0)),
-    'FIRST-DEPOSIT-COUNT': (Number(d['FIRST-DEPOSIT-COUNT']) || 0) + (Number(t['FIRST-DEPOSIT-COUNT']) || 0)
+    'FIRST-DEPOSIT-COUNT': (Number(d['FIRST-DEPOSIT-COUNT']) || 0) + (Number(t['FIRST-DEPOSIT-COUNT']) || 0),
+    'TEAM-BET': teamBet,
+    'BETTOR-COUNT': Number(rec['BETTOR-COUNT']) || 0
   };
   return json({ ok: true, summary: summary, team: team, list: list });
 }
@@ -471,8 +614,68 @@ async function handleBonus(env, url) {
   const records = [];
   for (const id in rmap) { const r = rmap[id] || {}; records.push(r); }
 
-  return json({ ok: true, tasks: tasks, records: records,
-    efficientPeople: efficientPeople, rechargePeople: rechargePeople });
+  /* ---------------------------------------------------------------
+     Bonus details page ke liye poori (normalized) list:
+       FIRST-DEPOSIT-BONUS  -> type "Deposit Gift"
+       BONUSES(TYPE=...)    -> "Invitation bonus" / "Bonus" / "VIP level up reward"
+     Har row: { TYPE, AMOUNT, TIME, STATUS, NOTE, FROM }
+     STATUS page me "Received"/"To be collected"/"Expired" se match kare.
+     --------------------------------------------------------------- */
+  function normStatus(s) {
+    var v = String(s || '').toUpperCase();
+    if (v === 'CREDITED' || v === 'RECEIVED' || v === 'DONE') return 'Received';
+    if (v === 'EXPIRED') return 'Expired';
+    return 'To be collected';
+  }
+  var bonusList = [];
+  const fdbAll = rec['FIRST-DEPOSIT-BONUS'] || {};
+  for (const fid in fdbAll) {
+    const f = fdbAll[fid] || {};
+    bonusList.push({
+      ID: fid, TYPE: 'Deposit Gift', AMOUNT: Number(f.BONUS) || 0,
+      TIME: f.TIME || '', STATUS: normStatus(f.STATUS || 'CREDITED'),
+      NOTE: '', FROM: f.FROM || ''
+    });
+  }
+  const bAll = rec['BONUSES'] || {};
+  for (const bid in bAll) {
+    const b = bAll[bid] || {};
+    var t = String(b.TYPE || '').toUpperCase();
+    var label = t === 'INVITE-COUNT' ? 'Invitation bonus'
+      : t === 'MANUAL' ? 'Bonus'
+      : t === 'VIP' ? 'VIP level up reward' : 'Bonus';
+    bonusList.push({
+      ID: bid, TYPE: label, AMOUNT: Number(b.AMOUNT) || 0,
+      TIME: b.TIME || '', STATUS: normStatus(b.STATUS || 'CREDITED'),
+      NOTE: b.NOTE || '', FROM: ''
+    });
+  }
+  /* naya pehle */
+  bonusList.sort(function (a, b) { return String(b.TIME).localeCompare(String(a.TIME)); });
+
+  /* Partner rewards page ke 3 counters:
+     - inviteCount   = total direct invitees (SUBORDINATES LV1)
+     - effectiveCount = invitees jinhone deposit kiya (effective)
+     - totalBonus    = ab tak mila total invite bonus
+                       (FIRST-DEPOSIT-BONUS + task/manual BONUSES ka sum) */
+  let inviteCount = 0;
+  for (const cid in subs) { if (Number((subs[cid] || {}).LV) === 1) inviteCount++; }
+  let totalBonus = 0;
+  const fdbMap = rec['FIRST-DEPOSIT-BONUS'] || {};
+  for (const fid in fdbMap) {
+    const f = fdbMap[fid] || {};
+    if (String(f.STATUS || 'CREDITED').toUpperCase() === 'CREDITED') totalBonus += Number(f.BONUS) || 0;
+  }
+  const bmap = rec['BONUSES'] || {};
+  for (const bid in bmap) {
+    const b = bmap[bid] || {};
+    if (String(b.STATUS || '').toUpperCase() === 'CREDITED') totalBonus += Number(b.AMOUNT) || 0;
+  }
+  totalBonus = Math.round(totalBonus * 100) / 100;
+
+  return json({ ok: true, tasks: tasks, records: records, list: bonusList,
+    efficientPeople: efficientPeople, rechargePeople: rechargePeople,
+    inviteCount: inviteCount, effectiveCount: rechargePeople, totalBonus: totalBonus });
 }
 
 /* POST /claim  { uid, taskId }  -> task bonus claim (wallet) */
@@ -505,6 +708,7 @@ async function handleClaim(env, body) {
   const bonus = Number(t.BONUS) || 0;
   const txId = 'TASK:' + taskId;
   await creditBalance(env, uid, bonus, txId);
+  await txWrite(env, uid, 'Invite bonus', bonus, 'Success', txId, taskId);
   await fbSet(env, '/USERS/' + encodeURIComponent(uid) + '/INVITATION-RECORD/BONUSES/' + encodeURIComponent(txId), {
     AMOUNT: bonus, TYPE: 'INVITE-COUNT', TIME: stamp(), STATUS: 'CREDITED', NOTE: taskId
   });
@@ -521,6 +725,7 @@ async function handleAdminReward(env, body, req) {
   if (!uid || amount === 0) return json({ ok: false, error: 'uid and amount required' }, 400);
   const id = newId('M');
   await creditBalance(env, uid, amount, 'MANUAL:' + id);
+  await txWrite(env, uid, 'Bonus', amount, 'Success', 'MANUAL:' + id, note);
   await fbSet(env, '/USERS/' + encodeURIComponent(uid) + '/INVITATION-RECORD/BONUSES/' + encodeURIComponent(id), {
     AMOUNT: r2(amount), TYPE: 'MANUAL', TIME: stamp(), STATUS: 'CREDITED', NOTE: note
   });
@@ -560,6 +765,7 @@ async function handleFetch(request, env) {
     if (p === '/' || p === '/health') return json({ ok: true, service: 'rsclub-invite' });
 
     if (p === '/register' && request.method === 'POST') return await handleRegister(env, await request.json());
+    if (p === '/repair-chain' && request.method === 'POST') return await handleRepairChain(env, await request.json(), request);
     if (p === '/deposit' && request.method === 'POST') return await handleDeposit(env, await request.json());
     if (p === '/bet' && request.method === 'POST') return await handleBet(env, await request.json());
     if (p === '/claim' && request.method === 'POST') return await handleClaim(env, await request.json());

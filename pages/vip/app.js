@@ -212,20 +212,107 @@
   var con = document.querySelector('.vip-content-recordVsrule-con');
   var rulesTemplate = document.getElementById('vip-rules-template');
   var rulesHTML = rulesTemplate ? rulesTemplate.innerHTML : '';
-  var historyHTML = ''
-    + '<div data-v-f84b843f="" data-v-eaa4a307="" class="empty__container">'
-    + '<svg data-v-f84b843f="" class="svg-icon icon-empty"><use xlink:href="#icon-empty"></use></svg>'
-    + '<p data-v-f84b843f="">No data</p>'
-    + '</div>'
-    + '<button data-v-eaa4a307="">View All</button>';
+
+  function historyPlaceholder() {
+    return '<div data-v-f84b843f="" data-v-eaa4a307="" class="empty__container">'
+      + '<svg data-v-f84b843f="" class="svg-icon icon-empty"><use xlink:href="#icon-empty"></use></svg>'
+      + '<p data-v-f84b843f="">No data</p></div>'
+      + '<button data-v-eaa4a307="">View All</button>';
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  /* VIP history rows (original jaisa exact structure + scoped attr data-v-eaa4a307,
+     warna design ka CSS apply nahi hota aur text UI ke bahar chala jata hai). */
+  function vipLabel(row) {
+    var t = Number(row.TYPE) || 0;
+    var lv = row.REMARK != null ? row.REMARK : row.LEVEL;
+    if (t === 1) return { cls: 'green', text: 'Successfully received [Level up reward]', amt: true };
+    if (t === 2) return { cls: 'green', text: 'Successfully received [Monthly bonus]', amt: true };
+    if (t === 3) return { cls: 'yellow', text: 'Completion of level maintenance conditions [100% Completed]', exp: true };
+    if (t === 4) return { cls: 'red', text: 'Level maintenance status not complete [' + esc(lv) + '%Complete]', exp: true };
+    if (t === 5) return { cls: 'yellow', text: 'VIP level upgraded to [VIP' + esc(lv) + ']' };
+    if (t === 6) return { cls: 'blue', text: 'Betting EXP', exp: true };
+    if (t === 7) return { cls: 'yellow', text: 'Total experience value downgraded to [VIP' + esc(lv) + ']' };
+    if (t === 8) return { cls: 'yellow', text: 'Relegation failed, experience points deducted and downgraded [VIP' + esc(lv) + ']' };
+    return { cls: 'yellow', text: esc(row.REMARK || ('VIP' + esc(lv))) };
+  }
+
+  function money(n) { return '\u20B9' + (Number(n) || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+
+  function renderHistory(list) {
+    if (!con) return;
+    if (!list || !list.length) { con.innerHTML = historyPlaceholder(); return; }
+    var A = ' data-v-eaa4a307=""';
+    var html = '';
+    for (var i = 0; i < list.length; i++) {
+      var r = list[i];
+      var m = vipLabel(r);
+      var right = '';
+      if (m.amt) {
+        right = '<div class="item-right"' + A + '>'
+          + '<p' + A + '>' + esc(money(r.AMOUNT || 0)) + '</p>'
+          + '<p' + A + '>' + esc(String(r.POINTS || 0)) + '</p>'
+          + '</div>';
+      } else if (m.exp) {
+        right = '<div class="item-right"' + A + '>'
+          + '<span' + A + '>' + (Number(r.EXP) || 0).toLocaleString('en-IN') + ' EXP</span>'
+          + '</div>';
+      }
+      html += '<div class="item ar-1px-b"' + A + '>'
+        + '<div class="item-left"' + A + '>'
+        + '<span class="' + m.cls + '"' + A + '>' + esc(m.text) + '</span>'
+        + '<span' + A + '>VIP' + esc(r.LEVEL || 0) + '</span>'
+        + '<span' + A + '>' + esc(r.TIME || '') + '</span>'
+        + '</div>'
+        + right
+        + '</div>';
+    }
+    con.innerHTML = html;
+  }
+
+  function loadHistory() {
+    if (!con) return;
+    var uid = '';
+    try { uid = localStorage.getItem('rsclub_uid') || ''; } catch (e) {}
+    uid = String(uid).trim();
+    if (!uid || uid === 'null' || uid === 'undefined') { con.innerHTML = historyPlaceholder(); return; }
+    fetch('https://rsclub91-62526-default-rtdb.firebaseio.com/USERS/' + encodeURIComponent(uid) + '/VIP-LOG.json', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        var list = [];
+        if (data && typeof data === 'object') {
+          for (var id in data) list.push(data[id]);
+        }
+        list.sort(function (a, b) { return String(b.TIME || '').localeCompare(String(a.TIME || '')); });
+        renderHistory(list);
+      })
+      .catch(function () { con.innerHTML = historyPlaceholder(); });
+  }
+
+  var historyViewing = (document.querySelector('.vip-content-recordVsrule-head button.active') || {}).textContent === 'History';
+
   tabs.forEach(function (tab, i) {
     tab.addEventListener('click', function () {
       tabs.forEach(function (t) { t.classList.remove('active'); });
       tab.classList.add('active');
       if (!con) return;
-      con.innerHTML = i === 1 ? rulesHTML : historyHTML;
+      if (i === 1) {               /* Rules */
+        historyViewing = false;
+        con.innerHTML = rulesHTML;
+      } else {                     /* History */
+        historyViewing = true;
+        loadHistory();
+      }
     });
   });
+
+  /* pehle se History active ho to data bharo */
+  if (historyViewing) loadHistory();
 
   if (con) {
     con.addEventListener('click', function (e) {
