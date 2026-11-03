@@ -100,13 +100,29 @@
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
   }
 
-  /* header ke "app / download" icon (.icon-btn jisme data:image/svg+xml img hai)
-     par click -> popup. (lang / login / logo wale icon chhodo.) */
+  /* header ke "app / download" icon par click -> popup.
+     NOTE: header me ek DOOSRA icon (customer chat/support) bhi hai jisme bhi
+     base64 svg hai - usse chhodna hai. Download icon ko pehchan: uski svg me
+     'clipPath' / '40.214' hota hai; chat icon me '#003B2C' / '25.9336' hota hai. */
   function isAppIcon(btn) {
     if (!btn || btn.classList.contains('rs-cs-bound')) return false;
     var img = btn.querySelector('img');
     if (!img) return false;
-    return /data:image\/svg\+xml;base64/i.test(img.getAttribute('src') || '');
+    var src = img.getAttribute('src') || '';
+    if (!/data:image\/svg\+xml;base64/i.test(src)) return false;
+
+    /* base64 decode karke svg content dekho (chat icon filter karne ke liye) */
+    var b64 = src.replace(/^data:image\/svg\+xml;base64,/i, '').replace(/[\s\r\n]+/g, '');
+    var svg = '';
+    try { svg = atob(b64); } catch (e) { svg = ''; }
+    if (svg) {
+      /* download/app icon -> bind (clipPath / 40.214 = uske unique markers) */
+      if (svg.indexOf('clipPath') >= 0 || svg.indexOf('40.214') >= 0) return true;
+      /* customer chat/support icon -> skip (25.9336 = chat ke 3 dots) */
+      if (svg.indexOf('25.9336') >= 0) return false;
+    }
+    /* decode na hua to purana behaviour: bind kar do */
+    return true;
   }
 
   function bind() {
