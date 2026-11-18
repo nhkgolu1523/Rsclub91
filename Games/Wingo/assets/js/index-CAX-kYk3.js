@@ -1,0 +1,1 @@
+import{_ as e,H as n,I as a}from"./index-f7goz6IE.js";const c={};function i(r,s){return n(),a("div")}const o=e(c,[["render",i],["__file","/home/jenkins/agent/workspace/AR102-Pages-india-veergame/src/views/main/PointDetail/index.vue"]]);export{o as default};

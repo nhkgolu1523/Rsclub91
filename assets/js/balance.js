@@ -1,0 +1,157 @@
+/* ==========================================================================
+   Rsclub91 - balance widget helper  (assets/js/balance.js)
+   --------------------------------------------------------------------------
+   Ye sirf RSBalCore (assets/js/balance-core.js) ka patla wrapper hai.
+   Paisa yahan kabhi nahi likha jata - saara credit/debit ETag-CAS +
+   idempotent txId wale core se hota hai.
+
+   API (purane pages ke liye wahi naam):
+     RSBalance.watch(cb)    - balance badle to cb(value) (turant current value)
+     RSBalance.get(cb)      - server se fresh value
+     RSBalance.format(v)    - "₹1,234.50"
+     RSBalance.value()      - abhi ka balance
+     RSBalance.refresh()    - manual re-read
+   ========================================================================== */
+(function () {
+  'use strict';
+
+  if (window.RSBalance) return;
+
+  function core() { return window.RSBalCore || null; }
+
+  function normalize(v) {
+    var c = core();
+    if (c) return c.normalize(v);
+    if (v === null || v === undefined || v === '' || v === 'null') return 0;
+    var n = Number(v);
+    return isFinite(n) ? Math.round(n * 100) / 100 : 0;
+  }
+
+  function format(v) {
+    return '\u20B9' + normalize(v).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+
+  function uid() {
+    var c = core();
+    if (c) return c.uid();
+    try {
+      var u = localStorage.getItem('rsclub_uid');
+      u = u == null ? '' : String(u).trim();
+      return (u && u !== 'null' && u !== 'undefined') ? u : '';
+    } catch (e) { return ''; }
+  }
+
+  /* fallback: core load na hua ho to sirf PADHNA (koi write nahi) */
+  function readMirror(cb) {
+    var u = uid();
+    if (!u || typeof fetch !== 'function') { if (cb) cb(null); return; }
+    fetch('https://rsclub91-62526-default-rtdb.firebaseio.com/USERS/' +
+      encodeURIComponent(u) + '/BALANCE/MAIN-BALANCE.json', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (v) { if (cb) cb(v === null || v === undefined ? null : normalize(v)); })
+      .catch(function () { if (cb) cb(null); });
+  }
+
+  /* balance refresh par "Refresh successfully" popup (original app jaisa).
+     VUI.toast -> RS.toast -> apna fallback toast. */
+  function refreshToast() {
+    var msg = 'Refresh successfully';
+    try { if (window.VUI && VUI.toast) { VUI.toast(msg, 2000); return; } } catch (e) {}
+    try { if (window.RS && RS.toast) { RS.toast(msg); return; } } catch (e) {}
+    var id = 'rsBalToast';
+    var old = document.getElementById(id);
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    if (!document.getElementById('rsBalToastCss')) {
+      var st = document.createElement('style');
+      st.id = 'rsBalToastCss';
+      st.textContent = '#' + id + '{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:100001;'
+        + 'background:rgba(30,30,36,.92);color:#fff;font-size:.34rem;padding:.22rem .4rem;border-radius:.34rem;'
+        + 'max-width:78%;text-align:center;opacity:0;transition:opacity .2s;pointer-events:none}'
+        + '#' + id + '.show{opacity:1}';
+      (document.head || document.documentElement).appendChild(st);
+    }
+    var el = document.createElement('div');
+    el.id = id;
+    el.textContent = msg;
+    document.body.appendChild(el);
+    var raf = window.requestAnimationFrame || function (fn) { setTimeout(fn, 16); };
+    raf(function () { el.classList.add('show'); });
+    setTimeout(function () {
+      el.classList.remove('show');
+      setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 250);
+    }, 2000);
+  }
+
+  window.RSBalance = {
+    uid: uid,
+    normalize: normalize,
+    format: format,
+
+    /* refresh icon (.balanceAssets__main img) par click -> server se fresh value */
+    bindRefreshIcon: function () {
+      var img = document.querySelector('.balanceAssets__main img[src*="27c21640bdff"]');
+      if (!img || img.__rsRefreshBound) return;
+      img.__rsRefreshBound = true;
+      img.style.cursor = 'pointer';
+      img.addEventListener('click', function () {
+        var c = core();
+        if (c && c.refresh) { try { c.refresh(); } catch (e) {} }
+        refreshToast();
+      });
+    },
+
+    value: function () {
+      var c = core();
+      return c ? c.value() : 0;
+    },
+
+    ready: function () {
+      var c = core();
+      return !!(c && c.ready());
+    },
+
+    /* fresh value from the server (refresh icon / page load) */
+    get: function (cb) {
+      var c = core();
+      if (!c) { readMirror(cb); return; }
+      c.refresh(function () {
+        if (cb) cb(c.ready() ? c.value() : null);
+      });
+    },
+
+    refresh: function () {
+      var c = core();
+      if (c) c.refresh();
+    },
+
+    /* subscribe: value change par cb(value). Purane pages yahi use karte hain. */
+    watch: function (cb) {
+      var c = core();
+      if (c) return c.on(cb);
+      /* fallback (read-only poll) - core load na hone par bhi UI sahi rahe */
+      var stop = false;
+      var tick = function () { readMirror(function (v) { if (!stop && v !== null) cb(v); }); };
+      tick();
+      var t = setInterval(tick, 3000);
+      return function () { stop = true; clearInterval(t); };
+    },
+
+    /* purane code ke liye: absolute value set (CAS delta ke roop me) */
+    set: function (v, cb) {
+      var c = core();
+      if (!c) { if (cb) cb(false); return; }
+      var d = normalize(v) - c.value();
+      c.apply('SET:' + uid() + ':' + Date.now().toString(36) + ':' + Math.random().toString(36).slice(2, 6), d);
+      if (cb) cb(true);
+    }
+  };
+
+  /* refresh icon ko turant (aur thodi der baad) bind karo - page ka apna
+     markup baad me aata ho to bhi chal jaye. */
+  function autoBind() { try { window.RSBalance.bindRefreshIcon(); } catch (e) {} }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', autoBind);
+  else autoBind();
+  window.addEventListener('load', autoBind);
+  setTimeout(autoBind, 800);
+  setTimeout(autoBind, 2000);
+})();

@@ -1,0 +1,24 @@
+html,
+body {
+  background: #0b0b10;
+}
+#app {
+  min-height: 100vh;
+}
+.redeem-container {
+  min-height: 100vh;
+  padding-bottom: .4rem;
+  background: #111217;
+}
+.redeem-container .navbar__content-left {
+  cursor: pointer;
+}
+.redeem-container-receive input {
+  color: #f4f5f7;
+}
+.redeem-container-receive button {
+  cursor: pointer;
+}
+.customer {
+  cursor: pointer;
+}

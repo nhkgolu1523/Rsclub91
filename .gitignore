@@ -1,0 +1,38 @@
+# local-only material (raw scrape + backups), not part of the site
+reference/
+backup/
+Promotion Tab/
+Wallet Tab/
+VIP Tab/
+Withdraw Tab/
+Deposit Tab/
+ACCOUNT TAB/
+HEADER ISAK DEKHO/
+language ui.html
+
+# dev-only test dependency (jsdom, used by tools/render-check.js)
+node_modules/
+package-lock.json
+
+# local dev tooling (page builders + verifiers), not part of the site
+tools/
+
+# stray backup/unused scratch exported by the raw scrape
+pages/login/index.backup.html
+
+# OS junk
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# test screenshots captured during development
+*-screenshot.png
+coming-soon-screenshot.png
+
+# page backups
+pages/**/*.backup.html
+pages/**/*.backup.css
+
+# dev scratch files
+_*.txt
+_*.js

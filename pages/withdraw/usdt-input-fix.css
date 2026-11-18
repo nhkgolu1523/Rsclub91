@@ -1,0 +1,39 @@
+.explain .input .inp,
+.explain .input .inp:focus,
+.explain .input .inp:active {
+  background: transparent !important;
+  background-color: transparent !important;
+  -webkit-appearance: none;
+  appearance: none;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  color: var(--main-color) !important;
+  -webkit-text-fill-color: var(--main-color) !important;
+  caret-color: var(--main-color);
+}
+
+.explain .input .inp::placeholder {
+  color: var(--main-color) !important;
+  opacity: 1;
+  -webkit-text-fill-color: var(--main-color);
+}
+
+.explain .input .inp::selection {
+  background: rgba(32, 211, 116, .25) !important;
+  color: var(--main-color) !important;
+  -webkit-text-fill-color: var(--main-color) !important;
+}
+
+.explain .input .inp::-moz-selection {
+  background: rgba(32, 211, 116, .25) !important;
+  color: var(--main-color) !important;
+}
+
+.explain .input .inp:-webkit-autofill,
+.explain .input .inp:-webkit-autofill:hover,
+.explain .input .inp:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px var(--bg_color_L1) inset !important;
+  -webkit-text-fill-color: var(--main-color) !important;
+  caret-color: var(--main-color);
+}

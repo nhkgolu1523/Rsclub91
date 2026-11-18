@@ -1,0 +1,26 @@
+﻿# ============================================================
+#  RSClub91 PAYMENT worker  (Cloudflare Worker)  --  rsclub-pay
+# ------------------------------------------------------------
+#  Real UPI deposits through FamGateway (https://famgateway.in).
+#  Saara payment ka kaam SERVER-side hota hai; browser kabhi API key
+#  nahi dekhta. Key sirf secret me rehti hai:
+#      npx wrangler secret put FAMGATEWAY_API_KEY --name rsclub-pay
+#
+#  Endpoints:
+#    POST /deposit/order     -> gateway se UPI order (QR + intent)
+#    GET  /deposit/status    -> authoritative check + credit EXACTLY ONCE
+#    POST /payment/webhook   -> gateway ka HMAC-signed callback (fast path)
+#    POST /deposit/cancel    -> QR band (book clean)
+#    GET  /health
+# ============================================================
+
+name = "rsclub-pay"
+main = "src/index.js"
+compatibility_date = "2026-10-25"
+
+[vars]
+FB_BASE = "https://rsclub91-62526-default-rtdb.firebaseio.com"
+DEPOSIT-MIN = "500"
+DEPOSIT-MAX = "50000"
+PAYMENT-WINDOW-SECONDS = "600"
+INVITE-API = "https://rsclub-invite.99infinity.workers.dev"
